@@ -68,7 +68,7 @@ fixture real en `tests/fixtures/`.
 
 ## Phase 8: Conversores DOCX — US2 (P2)
 
-- [ ] T029 [P] [US2] Implementar DOCX→TXT/HTML con mammoth y fixture en `src/converters/docx-text.ts`, `src/workers/office.worker.ts` y `tests/converters/docx-text.test.ts` (depende de T016–T018).
+- [X] T029 [P] [US2] Implementar DOCX→TXT/HTML con mammoth y fixture en `src/converters/docx-text.ts`, `src/workers/office.worker.ts` y `tests/converters/docx-text.test.ts` (depende de T016–T018).
 - [ ] T030 [US2] Implementar DOCX→PDF con aviso de fidelidad parcial y fixture en `src/converters/docx-to-pdf.ts`, `src/workers/office.worker.ts` y `tests/converters/docx-to-pdf.test.ts` (depende de T029).
 
 ## Phase 9: Batch — US4 (P4)
