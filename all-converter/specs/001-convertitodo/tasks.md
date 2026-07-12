@@ -61,10 +61,10 @@ fixture real en `tests/fixtures/`.
 
 **Prueba independiente**: PDF con texto→imagen/TXT/DOCX; escaneado se rechaza; merge/split/rotación válidos.
 
-- [ ] T025 [P] [US3] Configurar carga local de pdfjs y workerSrc bajo COEP con prueba en `src/lib/pdfjs.ts`, `src/workers/pdf-read.worker.ts` y `tests/lib/pdfjs.test.ts` (depende de T018).
-- [ ] T026 [US3] Implementar PDF→PNG/JPG y PDF→TXT, incluyendo rechazo de escaneado, con fixtures en `src/converters/pdf-extract.ts`, `src/workers/pdf-read.worker.ts` y `tests/converters/pdf-extract.test.ts` (depende de T025).
-- [ ] T027 [US3] Implementar PDF→DOCX con heurísticas de títulos/párrafos/listas y fixtures en `src/converters/pdf-to-docx.ts`, `src/workers/pdf-read.worker.ts` y `tests/converters/pdf-to-docx.test.ts` (depende de T025).
-- [ ] T028 [P] [US3] Implementar unir/dividir/rotar PDFs y fixtures en `src/converters/pdf-manipulate.ts`, `src/workers/pdf-write.worker.ts` y `tests/converters/pdf-manipulate.test.ts` (depende de T016, T025).
+- [X] T025 [P] [US3] Configurar carga local de pdfjs y workerSrc bajo COEP con prueba en `src/lib/pdfjs.ts`, `src/workers/pdf-read.worker.ts` y `tests/lib/pdfjs.test.ts` (depende de T018).
+- [X] T026 [US3] Implementar PDF→PNG/JPG y PDF→TXT, incluyendo rechazo de escaneado, con fixtures en `src/converters/pdf-extract.ts`, `src/workers/pdf-read.worker.ts` y `tests/converters/pdf-extract.test.ts` (depende de T025).
+- [X] T027 [US3] Implementar PDF→DOCX con heurísticas de títulos/párrafos/listas y fixtures en `src/converters/pdf-to-docx.ts`, `src/workers/pdf-read.worker.ts` y `tests/converters/pdf-to-docx.test.ts` (depende de T025).
+- [X] T028 [P] [US3] Implementar unir/dividir/rotar PDFs y fixtures en `src/converters/pdf-manipulate.ts`, `src/workers/pdf-write.worker.ts` y `tests/converters/pdf-manipulate.test.ts` (depende de T016, T025).
 
 ## Phase 8: Conversores DOCX — US2 (P2)
 
