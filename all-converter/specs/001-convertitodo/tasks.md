@@ -1,4 +1,4 @@
-# Tasks: ConvertiTodo
+﻿# Tasks: ConvertiTodo
 
 **Input**: [spec.md](./spec.md), [plan.md](./plan.md), [research.md](./research.md), [data-model.md](./data-model.md), [quickstart.md](./quickstart.md)
 
@@ -11,33 +11,33 @@ fixture real en `tests/fixtures/`.
 
 ## Phase 1: Setup del proyecto
 
-- [ ] T001 Inicializar Vite React 19 con TypeScript estricto y scripts en `package.json`, `tsconfig.json`, `vite.config.ts` y `src/main.tsx`.
-- [ ] T002 [P] Configurar Tailwind CSS v4 y estilos globales en `src/index.css` y `vite.config.ts`.
-- [ ] T003 [P] Configurar Vitest y entorno de pruebas en `vitest.config.ts`, `src/test/setup.ts` y `package.json`.
-- [ ] T004 [P] Crear `vercel.json` con COOP `same-origin` y COEP `require-corp` para todas las rutas.
-- [ ] T005 [P] Crear la estrategia de fuentes autoalojadas en `public/fonts/` y `src/index.css`, sin CDN runtime.
-- [ ] T006 Crear estructura inicial y fixtures reales en `src/{components,converters,workers,lib}/` y `tests/fixtures/{sample.docx,sample.xlsx,sample.csv,sample.png,animated.webp,text.pdf,scanned.pdf,protected.pdf,corrupt.pdf,sample.mp3,sample.mp4,silent.mp4}` (depende de T001–T003).
+- [X] T001 Inicializar Vite React 19 con TypeScript estricto y scripts en `package.json`, `tsconfig.json`, `vite.config.ts` y `src/main.tsx`.
+- [X] T002 [P] Configurar Tailwind CSS v4 y estilos globales en `src/index.css` y `vite.config.ts`.
+- [X] T003 [P] Configurar Vitest y entorno de pruebas en `vitest.config.ts`, `src/test/setup.ts` y `package.json`.
+- [X] T004 [P] Crear `vercel.json` con COOP `same-origin` y COEP `require-corp` para todas las rutas.
+- [X] T005 [P] Crear la estrategia de fuentes autoalojadas en `public/fonts/` y `src/index.css`, sin CDN runtime.
+- [X] T006 Crear estructura inicial y fixtures reales en `src/{components,converters,workers,lib}/` y `tests/fixtures/{sample.docx,sample.xlsx,sample.csv,sample.png,animated.webp,text.pdf,scanned.pdf,protected.pdf,corrupt.pdf,sample.mp3,sample.mp4,silent.mp4}` (depende de T001–T003).
 
 ## Phase 2: Núcleo fundacional
 
-- [ ] T007 Definir `DetectedFileType`, `FileEntry`, `ConversionJob`, `ConversionResult`, estados y `Converter` en `src/converters/types.ts` conforme a `data-model.md` (depende de T006).
-- [ ] T008 [P] Implementar detección magic-bytes con fallback de extensión y pruebas en `src/lib/file-type.ts` y `tests/lib/file-type.test.ts` (depende de T007).
-- [ ] T009 [P] Implementar validación de límites y pruebas en `src/lib/file-limits.ts` y `tests/lib/file-limits.test.ts` (depende de T007).
-- [ ] T010 Crear registry central y pruebas de destinos por tipo en `src/converters/registry.ts` y `tests/registry/registry.test.ts` (depende de T007–T009).
+- [X] T007 Definir `DetectedFileType`, `FileEntry`, `ConversionJob`, `ConversionResult`, estados y `Converter` en `src/converters/types.ts` conforme a `data-model.md` (depende de T006).
+- [X] T008 [P] Implementar detección magic-bytes con fallback de extensión y pruebas en `src/lib/file-type.ts` y `tests/lib/file-type.test.ts` (depende de T007).
+- [X] T009 [P] Implementar validación de límites y pruebas en `src/lib/file-limits.ts` y `tests/lib/file-limits.test.ts` (depende de T007).
+- [X] T010 Crear registry central y pruebas de destinos por tipo en `src/converters/registry.ts` y `tests/registry/registry.test.ts` (depende de T007–T009).
 
 ## Phase 3: UI base
 
-- [ ] T011 [US1] Implementar ingreso accesible por selector y drag/drop en `src/components/Dropzone.tsx` (depende de T007–T010).
-- [ ] T012 [P] [US1] Implementar cola y estados/rechazos en `src/components/FileQueue.tsx` y `src/components/ConversionCard.tsx` (depende de T007–T010).
-- [ ] T013 [P] [US1] Implementar progreso y descarga local en `src/components/ProgressBar.tsx` y `src/components/ResultDownload.tsx` (depende de T007).
-- [ ] T014 [US1] Integrar UI con registry sin lógica de conversión en `src/App.tsx` y `src/components/ConversionCard.tsx` (depende de T011–T013).
+- [X] T011 [US1] Implementar ingreso accesible por selector y drag/drop en `src/components/Dropzone.tsx` (depende de T007–T010).
+- [X] T012 [P] [US1] Implementar cola y estados/rechazos en `src/components/FileQueue.tsx` y `src/components/ConversionCard.tsx` (depende de T007–T010).
+- [X] T013 [P] [US1] Implementar progreso y descarga local en `src/components/ProgressBar.tsx` y `src/components/ResultDownload.tsx` (depende de T007).
+- [X] T014 [US1] Integrar UI con registry sin lógica de conversión en `src/App.tsx` y `src/components/ConversionCard.tsx` (depende de T011–T013).
 
 ## Phase 4: Infraestructura de workers
 
-- [ ] T015 Crear canal tipado `start/progress/result/error/cancel` y prueba de contratos en `src/workers/types.ts` y `tests/workers/types.test.ts` (depende de T007).
-- [ ] T016 Implementar fábrica de workers, transferibles, AbortController y terminación, con mock y pruebas en `src/workers/client.ts`, `src/workers/worker-utils.ts` y `tests/workers/client.test.ts` (depende de T015).
-- [ ] T017 Implementar scheduler de dos trabajos, progreso global y cancelación de lote con pruebas en `src/lib/job-scheduler.ts` y `tests/lib/job-scheduler.test.ts` (depende de T015–T016).
-- [ ] T018 Implementar cargador dinámico por dominio y medición de chunks en `src/lib/lazy-loader.ts` y `tests/lib/lazy-loader.test.ts` (depende de T016).
+- [X] T015 Crear canal tipado `start/progress/result/error/cancel` y prueba de contratos en `src/workers/types.ts` y `tests/workers/types.test.ts` (depende de T007).
+- [X] T016 Implementar fábrica de workers, transferibles, AbortController y terminación, con mock y pruebas en `src/workers/client.ts`, `src/workers/worker-utils.ts` y `tests/workers/client.test.ts` (depende de T015).
+- [X] T017 Implementar scheduler de dos trabajos, progreso global y cancelación de lote con pruebas en `src/lib/job-scheduler.ts` y `tests/lib/job-scheduler.test.ts` (depende de T015–T016).
+- [X] T018 Implementar cargador dinámico por dominio y medición de chunks en `src/lib/lazy-loader.ts` y `tests/lib/lazy-loader.test.ts` (depende de T016).
 
 ## Phase 5: Conversores de imágenes — US1 (P1)
 
@@ -45,17 +45,17 @@ fixture real en `tests/fixtures/`.
 
 **Prueba independiente**: PNG fixture→JPG/WebP válido; calidad y dimensiones respetadas; archivos inválidos se rechazan.
 
-- [ ] T019 [P] [US1] Implementar PNG/JPG/WebP con Canvas/compresión, worker y fixture en `src/converters/image.ts`, `src/workers/image.worker.ts` y `tests/converters/image.test.ts` (depende de T010, T016–T018).
-- [ ] T020 [US1] Registrar exclusivamente las conversiones de imagen en `src/converters/registry.ts` (depende de T019).
-- [ ] T021 [US1] Implementar imágenes→PDF con orden y fixture en `src/converters/images-to-pdf.ts`, `src/workers/pdf-write.worker.ts` y `tests/converters/images-to-pdf.test.ts` (depende de T019).
+- [X] T019 [P] [US1] Implementar PNG/JPG/WebP con Canvas/compresión, worker y fixture en `src/converters/image.ts`, `src/workers/image.worker.ts` y `tests/converters/image.test.ts` (depende de T010, T016–T018).
+- [X] T020 [US1] Registrar exclusivamente las conversiones de imagen en `src/converters/registry.ts` (depende de T019).
+- [X] T021 [US1] Implementar imágenes→PDF con orden y fixture en `src/converters/images-to-pdf.ts`, `src/workers/pdf-write.worker.ts` y `tests/converters/images-to-pdf.test.ts` (depende de T019).
 
 ## Phase 6: Conversores de planillas — US2 (P2)
 
 **Prueba independiente**: XLSX fixture→CSV/JSON conserva filas; CSV/JSON tabular→XLSX abre; multihoja crea ZIP.
 
-- [ ] T022 [P] [US2] Instalar SheetJS versionado desde CDN oficial y crear wrapper diferido en `package.json`, `src/lib/sheetjs.ts` y `tests/lib/sheetjs.test.ts` (depende de T018).
-- [ ] T023 [US2] Implementar XLSX/CSV/JSON↔planilla, multihoja y fixtures en `src/converters/spreadsheet.ts`, `src/workers/office.worker.ts` y `tests/converters/spreadsheet.test.ts` (depende de T010, T016–T018, T022).
-- [ ] T024 [US2] Implementar planilla→PDF y fixture en `src/converters/spreadsheet-to-pdf.ts`, `src/workers/office.worker.ts` y `tests/converters/spreadsheet-to-pdf.test.ts` (depende de T023).
+- [X] T022 [P] [US2] Instalar SheetJS versionado desde CDN oficial y crear wrapper diferido en `package.json`, `src/lib/sheetjs.ts` y `tests/lib/sheetjs.test.ts` (depende de T018).
+- [X] T023 [US2] Implementar XLSX/CSV/JSON↔planilla, multihoja y fixtures en `src/converters/spreadsheet.ts`, `src/workers/office.worker.ts` y `tests/converters/spreadsheet.test.ts` (depende de T010, T016–T018, T022).
+- [X] T024 [US2] Implementar planilla→PDF y fixture en `src/converters/spreadsheet-to-pdf.ts`, `src/workers/office.worker.ts` y `tests/converters/spreadsheet-to-pdf.test.ts` (depende de T023).
 
 ## Phase 7: Conversores de PDF — US3 (P3)
 
