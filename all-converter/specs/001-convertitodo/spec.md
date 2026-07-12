@@ -8,6 +8,15 @@
 
 **Input**: User description: "Desarrollar ConvertiTodo, una aplicación web que permite convertir archivos entre formatos directamente en el navegador, sin subir nada a ningún servidor. El usuario arrastra uno o más archivos (o una carpeta), la app detecta el tipo de cada archivo y le ofrece las conversiones disponibles. El usuario elige el formato destino, convierte y descarga el resultado. Si son varios archivos, descarga un ZIP."
 
+## Clarifications
+
+### Session 2026-07-12
+
+- Q: ¿Postura sobre telemetría que no involucra archivos (analytics, error reporting)? → A: Cero telemetría: ninguna solicitud saliente en runtime más allá de la carga de la propia app y sus recursos.
+- Q: ¿Máximo de archivos por lote/cola? → A: 10 archivos como máximo, todos del mismo formato de origen y hacia un único formato destino. Lotes con formatos mezclados quedan fuera de alcance.
+- Q: ¿Nivel de accesibilidad exigido? → A: Básica: flujo completo operable por teclado, controles etiquetados para lectores de pantalla, contraste suficiente y foco visible. WCAG AA formal queda como mejora futura.
+- Q: ¿Conversiones pesadas (audio/video) en dispositivos móviles? → A: Bloqueadas en móvil con mensaje explicativo; solo disponibles en desktop.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Convertir un archivo individual (Priority: P1)
@@ -121,11 +130,11 @@ resultado tiene la suma de páginas en orden.
 
 ### User Story 4 - Convertir en lote y carpetas completas (Priority: P4)
 
-Una persona tiene una carpeta con decenas de fotos que necesita en otro formato, o
-varios documentos del mismo tipo. Arrastra la carpeta completa (o selecciona varios
-archivos), elige un único formato destino para todos, y la app los convierte en cola
-mostrando progreso individual y global. Al terminar descarga todos los resultados como
-un único ZIP.
+Una persona tiene una carpeta con fotos que necesita en otro formato, o varios
+documentos del mismo tipo. Arrastra la carpeta completa (o selecciona varios
+archivos), la app admite hasta 10 archivos del mismo formato, elige un único formato
+destino para todos, y la app los convierte en cola mostrando progreso individual y
+global. Al terminar descarga todos los resultados como un único ZIP.
 
 **Why this priority**: el procesamiento por lote multiplica el valor de cada conversor
 ya existente, pero requiere que las historias 1-3 provean conversores que ejecutar.
@@ -137,8 +146,9 @@ contiene 10 JPG válidos.
 **Acceptance Scenarios**:
 
 1. **Given** una carpeta con archivos arrastrada a la app, **When** la app la procesa,
-   **Then** todos los archivos soportados (incluidos los de subcarpetas) aparecen en
-   la cola y los no soportados se listan como rechazados con motivo.
+   **Then** los archivos del mismo formato que el primero aceptado (incluidos los de
+   subcarpetas) entran a la cola hasta el máximo de 10, y el resto (formato distinto,
+   no soportado o excedente del límite) se lista como rechazado con motivo.
 2. **Given** 10 imágenes del mismo tipo en la cola, **When** el usuario elige un
    formato destino y convierte, **Then** se procesan con paralelismo limitado (2-3
    simultáneas), mostrando progreso por archivo y progreso global.
@@ -234,9 +244,10 @@ visible sin scroll en la pantalla inicial.
   no es un DOCX real se rechaza indicando el tipo detectado. La extensión solo se usa
   como fallback cuando el contenido no alcanza para identificar el tipo.
 - **Carpeta con tipos mezclados**: al arrastrar una carpeta con imágenes, PDFs y
-  archivos no soportados, los soportados entran a la cola agrupados por tipo y los no
-  soportados se listan como rechazados con motivo; la conversión por lote a un destino
-  único aplica solo a los archivos compatibles con ese destino.
+  archivos no soportados, solo entran a la cola (hasta 10) los archivos del mismo
+  formato que el primero aceptado; los demás se listan como rechazados indicando el
+  motivo (formato distinto al del lote, tipo no soportado o límite excedido). Los
+  lotes heterogéneos quedan fuera de alcance.
 - **Cancelación a mitad de conversión**: cancelar una conversión en curso detiene el
   trabajo, libera los recursos, no deja descargas parciales y devuelve el archivo al
   estado "listo" para reintentar. En un lote, cancelar detiene los trabajos en curso y
@@ -319,8 +330,11 @@ visible sin scroll en la pantalla inicial.
 
 #### Conversión por lote (Fase 2)
 
-- **FR-023**: El sistema MUST permitir convertir N archivos compatibles a un mismo
-  formato destino en una sola operación.
+- **FR-023**: El sistema MUST permitir convertir hasta 10 archivos del mismo formato
+  de origen a un mismo formato destino en una sola operación. Los archivos que
+  excedan el límite de 10, o cuyo formato difiera del formato del lote en curso, se
+  rechazan con mensaje que explique el motivo. Los lotes con formatos de origen
+  mezclados quedan fuera de alcance.
 - **FR-024**: El sistema MUST procesar la cola con paralelismo limitado (2-3
   conversiones simultáneas), sin degradar la fluidez de la interfaz.
 - **FR-025**: El sistema MUST mostrar progreso individual por archivo y progreso
@@ -347,6 +361,9 @@ visible sin scroll en la pantalla inicial.
 - **FR-033**: En navegadores sin capacidad de procesamiento multihilo, las
   conversiones de audio/video MUST funcionar en modo degradado (más lento) y el
   sistema MUST comunicarlo.
+- **FR-033b**: En dispositivos móviles, las conversiones de audio/video MUST estar
+  deshabilitadas, mostrando un mensaje que explique que solo están disponibles en
+  computadoras de escritorio.
 
 #### Experiencia de conversión
 
@@ -370,8 +387,10 @@ visible sin scroll en la pantalla inicial.
 #### Privacidad y disponibilidad
 
 - **FR-040**: Ningún archivo del usuario, ni su contenido total o parcial, MUST NOT
-  enviarse fuera del navegador bajo ninguna circunstancia (sin telemetría de
-  contenido, sin subida a servicios externos).
+  enviarse fuera del navegador bajo ninguna circunstancia. Además, la app MUST NOT
+  emitir ninguna solicitud saliente en runtime (cero telemetría: sin analytics, sin
+  error reporting, sin contadores de uso); las únicas solicitudes de red permitidas
+  son las de carga de la propia app y sus recursos de conversión.
 - **FR-041**: La pantalla inicial MUST incluir un banner o sección visible que
   explique que los archivos se procesan localmente y nunca salen del navegador.
 - **FR-042**: Una vez cargada, la app MUST funcionar sin conexión para las
@@ -380,6 +399,11 @@ visible sin scroll en la pantalla inicial.
 - **FR-043**: La app MUST funcionar en las versiones actuales de Chrome, Firefox,
   Edge y Safari, y MUST ser usable desde móviles para conversiones livianas
   (imágenes, PDF simple).
+- **FR-044**: El flujo completo (agregar archivo, elegir destino, convertir,
+  descargar) MUST ser operable por teclado (el selector de archivos actúa como
+  alternativa accesible al drag & drop), con controles etiquetados para lectores de
+  pantalla, contraste suficiente y foco visible. El cumplimiento formal de WCAG AA
+  queda fuera de alcance de esta feature.
 
 ### Key Entities
 
@@ -415,12 +439,13 @@ visible sin scroll en la pantalla inicial.
 - **SC-005**: El 100% de las conversiones publicadas está verificado con al menos un
   archivo real representativo antes de estar disponible para usuarios.
 - **SC-006**: Una inspección del tráfico de red durante cualquier conversión muestra
-  cero solicitudes salientes que contengan el archivo del usuario o su contenido.
+  cero solicitudes salientes de cualquier tipo (ni contenido de archivos, ni
+  telemetría, ni analytics); solo se observan descargas de recursos propios de la app.
 - **SC-007**: El 100% de los casos de error previstos (archivo corrupto, tipo no
   soportado, tamaño excedido, PDF escaneado, PDF con contraseña, MP4 sin audio, DOCX
   sin tablas) produce un mensaje específico y accionable, no un error genérico.
-- **SC-008**: Un lote de 20 imágenes se convierte en una sola operación y se descarga
-  como un único ZIP con los 20 resultados correctos.
+- **SC-008**: Un lote de 10 imágenes del mismo formato se convierte en una sola
+  operación y se descarga como un único ZIP con los 10 resultados correctos.
 - **SC-009**: Con la app ya cargada y sin conexión, una conversión de imagen usada
   previamente en esa sesión se completa con éxito.
 - **SC-010**: Cancelar una conversión en curso surte efecto en menos de 1 segundo y
@@ -452,7 +477,8 @@ visible sin scroll en la pantalla inicial.
   sufijos numéricos.
 - **Fuera de alcance confirmado**: PDF→DOCX con fidelidad de layout, OCR de PDFs
   escaneados, PPTX y formatos de presentación, cuentas de usuario, historial,
-  compartir por link, y cualquier conversión en servidor.
+  compartir por link, cualquier conversión en servidor, y lotes con más de 10
+  archivos o con formatos de origen mezclados.
 
 ## Ambigüedades resueltas
 
