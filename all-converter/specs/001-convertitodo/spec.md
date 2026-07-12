@@ -16,6 +16,11 @@
 - Q: ¿Máximo de archivos por lote/cola? → A: 10 archivos como máximo, todos del mismo formato de origen y hacia un único formato destino. Lotes con formatos mezclados quedan fuera de alcance.
 - Q: ¿Nivel de accesibilidad exigido? → A: Básica: flujo completo operable por teclado, controles etiquetados para lectores de pantalla, contraste suficiente y foco visible. WCAG AA formal queda como mejora futura.
 - Q: ¿Conversiones pesadas (audio/video) en dispositivos móviles? → A: Bloqueadas en móvil con mensaje explicativo; solo disponibles en desktop.
+- Q: ¿Qué límites máximos por archivo aplican? → A: Imagen: 50 MB; PDF/documentos/planillas: 25 MB; audio: 100 MB; video: 250 MB.
+- Q: ¿Qué ocurre en PDF→DOCX sin capa de texto? → A: Se rechaza la conversión sin generar archivo, explicando que requeriría OCR, que queda fuera de alcance.
+- Q: ¿Cómo se organiza el ZIP de resultados de una carpeta? → A: Replica las subcarpetas originales; cada resultado conserva su ruta relativa y nueva extensión.
+- Q: ¿Qué se muestra sin SharedArrayBuffer? → A: Un aviso persistente antes y durante audio/video: “modo compatible, conversión más lenta”; la conversión continúa automáticamente en un solo hilo.
+- Q: ¿Qué ocurre en PDF→TXT sin capa de texto? → A: Se rechaza la conversión sin generar archivo, explicando que requeriría OCR, que queda fuera de alcance.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -153,8 +158,8 @@ contiene 10 JPG válidos.
    formato destino y convierte, **Then** se procesan con paralelismo limitado (2-3
    simultáneas), mostrando progreso por archivo y progreso global.
 3. **Given** un lote convertido con éxito, **When** el usuario descarga, **Then**
-   obtiene un único ZIP con todos los resultados, con nombres únicos aunque hubiera
-   archivos de origen con el mismo nombre en distintas subcarpetas.
+   obtiene un único ZIP que replica las subcarpetas originales; cada resultado
+   conserva su ruta relativa con la nueva extensión.
 4. **Given** un lote en proceso donde un archivo falla, **When** el lote termina,
    **Then** los archivos exitosos quedan descargables y el fallido muestra su error
    específico sin invalidar al resto.
@@ -191,7 +196,8 @@ reproduce el mismo audio.
    formato elegido.
 5. **Given** un navegador sin capacidad de procesamiento multihilo, **When** el
    usuario convierte audio/video, **Then** la conversión funciona igualmente (más
-   lenta) y la app lo comunica.
+   lenta) y la app muestra antes y durante la conversión un aviso persistente de
+   “modo compatible, conversión más lenta”.
 
 ---
 
@@ -232,8 +238,8 @@ visible sin scroll en la pantalla inicial.
   parece estar dañado o incompleto"), nunca con un error genérico ni colgando la app.
 - **PDF sin capa de texto (escaneado)**: PDF→TXT y PDF→DOCX deben detectar que no se
   extrajo texto y comunicar que el PDF parece ser un escaneo sin texto seleccionable
-  (OCR fuera de alcance en esta versión), en lugar de entregar un archivo vacío sin
-  explicación.
+  (OCR fuera de alcance en esta versión). Ambas conversiones se rechazan sin generar
+  un archivo vacío.
 - **PDF protegido con contraseña**: se rechaza antes de convertir con mensaje
   específico; el desbloqueo de PDFs queda fuera de alcance.
 - **Archivo de 2GB**: se rechaza ANTES de intentar convertir, indicando el límite de
@@ -295,8 +301,8 @@ visible sin scroll en la pantalla inicial.
   cancelado, rechazado).
 - **FR-008**: Cada conversión MUST definir un tamaño máximo de archivo, y el sistema
   MUST rechazar los archivos que lo excedan ANTES de intentar convertir, informando el
-  límite y el tamaño del archivo. Los valores concretos por categoría (imagen,
-  documento, audio, video) se calibran con benchmarks reales durante la fase de plan.
+  límite y el tamaño del archivo. Los límites por archivo son: imágenes, 50 MB;
+  PDF, documentos y planillas, 25 MB; audio, 100 MB; video, 250 MB.
 
 #### Matriz de conversiones — documentos e imágenes (Fase 1)
 
@@ -314,10 +320,13 @@ visible sin scroll en la pantalla inicial.
 - **FR-015**: El sistema MUST convertir PDF a imágenes PNG o JPG, generando una imagen
   por página.
 - **FR-016**: El sistema MUST convertir PDF a TXT extrayendo el texto en orden de
-  lectura.
+  lectura. Si no se extrae texto porque el PDF es escaneado, MUST rechazar la
+  conversión sin generar TXT e informar que requeriría OCR, fuera de alcance.
 - **FR-017**: El sistema MUST convertir PDF a DOCX conservando texto y estructura
   (títulos inferidos por tamaño de fuente, párrafos por espaciado), sin diseño ni
-  imágenes, y MUST comunicar esa limitación antes de convertir.
+  imágenes, y MUST comunicar esa limitación antes de convertir. Si no se extrae texto
+  porque el PDF es escaneado, MUST rechazar la conversión sin generar DOCX e informar
+  que requeriría OCR, fuera de alcance.
 - **FR-018**: El sistema MUST permitir unir varios PDFs en uno, en un orden definido
   por el usuario.
 - **FR-019**: El sistema MUST permitir dividir un PDF por rangos de páginas definidos
@@ -341,7 +350,8 @@ visible sin scroll en la pantalla inicial.
   global del lote.
 - **FR-026**: Cuando una conversión produzca múltiples archivos o un lote produzca
   múltiples resultados, el sistema MUST empaquetarlos en un único ZIP para descargar,
-  garantizando nombres únicos dentro del ZIP.
+  replicando las rutas relativas de origen cuando provengan de una carpeta y
+  garantizando nombres únicos dentro de cada ruta del ZIP.
 - **FR-027**: El fallo de un archivo dentro de un lote MUST NOT invalidar los
   resultados de los demás; cada fallo se reporta individualmente.
 - **FR-028**: El sistema MUST convertir DOCX a XLSX extrayendo las tablas del
@@ -360,7 +370,8 @@ visible sin scroll en la pantalla inicial.
   diferenciado del progreso de la conversión.
 - **FR-033**: En navegadores sin capacidad de procesamiento multihilo, las
   conversiones de audio/video MUST funcionar en modo degradado (más lento) y el
-  sistema MUST comunicarlo.
+  sistema MUST comunicarlo con un aviso persistente antes y durante la conversión:
+  “modo compatible, conversión más lenta”.
 - **FR-033b**: En dispositivos móviles, las conversiones de audio/video MUST estar
   deshabilitadas, mostrando un mensaje que explique que solo están disponibles en
   computadoras de escritorio.
@@ -472,9 +483,10 @@ visible sin scroll en la pantalla inicial.
   rechazan como no soportados.
 - **WebP/PNG animados**: se tratan como no soportados para conversión de imagen
   estática, con mensaje específico.
-- **Orden de lote**: dentro de un ZIP de resultados, los archivos conservan el nombre
-  base del archivo de origen con la nueva extensión; las colisiones se resuelven con
-  sufijos numéricos.
+- **Estructura de ZIP de lote**: cuando el lote proviene de una carpeta, el ZIP replica
+  sus subcarpetas y cada resultado conserva su ruta relativa y nombre base con la
+  nueva extensión. Las colisiones dentro de una misma ruta se resuelven con sufijos
+  numéricos.
 - **Fuera de alcance confirmado**: PDF→DOCX con fidelidad de layout, OCR de PDFs
   escaneados, PPTX y formatos de presentación, cuentas de usuario, historial,
   compartir por link, cualquier conversión en servidor, y lotes con más de 10
@@ -485,9 +497,8 @@ visible sin scroll en la pantalla inicial.
 Las tres ambigüedades detectadas fueron resueltas con el propietario del proyecto el
 2026-07-12:
 
-1. **FR-008 — Límites de tamaño**: los valores concretos por categoría se calibran
-   con benchmarks reales durante la fase de plan; la spec solo exige que existan y se
-   comuniquen antes de convertir.
+1. **FR-008 — Límites de tamaño**: imágenes, 50 MB; PDF, documentos y planillas,
+   25 MB; audio, 100 MB; video, 250 MB.
 2. **FR-013 — JSON→XLSX**: incluido en el alcance, limitado a JSON tabular (array de
    objetos planos).
 3. **XLSX multihoja**: se exporta un archivo por hoja (ZIP si resultan varios).
