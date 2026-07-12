@@ -7,8 +7,9 @@ import { pdfTextConverter, pdfToImagesConverter } from './pdf-extract'
 import { pdfToDocxConverter } from './pdf-to-docx'
 import { pdfMergeConverter, pdfRotateConverter, pdfSplitConverter } from './pdf-manipulate'
 import { docxTextConverter } from './docx-text'
+import { docxToPdfConverter } from './docx-to-pdf'
 
-export const converters: readonly Converter[] = [imageConverter, imagesToPdfConverter, spreadsheetConverter, spreadsheetToPdfConverter, pdfTextConverter, pdfToImagesConverter, pdfToDocxConverter, pdfMergeConverter, pdfSplitConverter, pdfRotateConverter, docxTextConverter]
+export const converters: readonly Converter[] = [imageConverter, imagesToPdfConverter, spreadsheetConverter, spreadsheetToPdfConverter, pdfTextConverter, pdfToImagesConverter, pdfToDocxConverter, pdfMergeConverter, pdfSplitConverter, pdfRotateConverter, docxTextConverter, docxToPdfConverter]
 
 export function getAvailableConverters(type: DetectedFileType, entries: readonly Converter[] = converters): readonly Converter[] {
   return entries.filter((converter) => converter.from.includes(type.kind))

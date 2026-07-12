@@ -57,6 +57,7 @@ export function ConversionCard({ entry }: { entry: FileEntry }) {
           {targets.map((option) => <option key={option} value={option}>{option.toUpperCase()}</option>)}
         </select>
       </label>}
+      {converter?.limitation && <p role="note">{converter.limitation}</p>}
       {state !== 'converting' && <button type="button" onClick={() => { void convert() }}>Convertir</button>}
       {state === 'converting' && <>
         <ProgressBar value={progress?.percent} />
