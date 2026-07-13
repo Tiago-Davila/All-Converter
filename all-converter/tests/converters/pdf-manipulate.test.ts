@@ -45,4 +45,15 @@ describe('PDF manipulation', () => {
     const rotated = await PDFDocument.load(result.buffer)
     expect(rotated.getPage(0).getRotation().angle).toBe(90)
   })
+
+  it('rechaza páginas fuera de rango, vacías o duplicadas', async () => {
+    const file = await fixture('text.pdf')
+    await expect(pdfRotateConverter.convert(file, noop, { pages: [999] }, signal)).rejects.toThrow(/entre 1 y/)
+    await expect(pdfRotateConverter.convert(file, noop, { pages: [] }, signal)).rejects.toThrow('al menos una')
+    await expect(pdfRotateConverter.convert(file, noop, { pages: [1, 1] }, signal)).rejects.toThrow('duplicados')
+  })
+
+  it('normaliza errores de PDF corrupto en manipulación', async () => {
+    await expect(pdfRotateConverter.convert(await fixture('corrupt.pdf'), noop, {}, signal)).rejects.toThrow(/dañado|incompleto/i)
+  })
 })

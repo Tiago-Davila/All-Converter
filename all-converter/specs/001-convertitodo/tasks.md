@@ -54,22 +54,22 @@ fixture real en `tests/fixtures/`.
 **Prueba independiente**: XLSX fixture→CSV/JSON conserva filas; CSV/JSON tabular→XLSX abre; multihoja crea ZIP.
 
 - [X] T022 [P] [US2] Instalar SheetJS versionado desde CDN oficial y crear wrapper diferido en `package.json`, `src/lib/sheetjs.ts` y `tests/lib/sheetjs.test.ts` (depende de T018).
-- [ ] T023 [US2] Implementar XLSX/CSV/JSON↔planilla, multihoja y fixtures en `src/converters/spreadsheet.ts`, `src/workers/office.worker.ts` y `tests/converters/spreadsheet.test.ts` (depende de T010, T016–T018, T022).
-- [ ] T024 [US2] Implementar planilla→PDF y fixture en `src/converters/spreadsheet-to-pdf.ts`, `src/workers/office.worker.ts` y `tests/converters/spreadsheet-to-pdf.test.ts` (depende de T023).
+- [X] T023 [US2] Implementar XLSX/CSV/JSON↔planilla, multihoja y fixtures en `src/converters/spreadsheet.ts`, `src/workers/office.worker.ts` y `tests/converters/spreadsheet.test.ts` (depende de T010, T016–T018, T022).
+- [X] T024 [US2] Implementar planilla→PDF y fixture en `src/converters/spreadsheet-to-pdf.ts`, `src/workers/office.worker.ts` y `tests/converters/spreadsheet-to-pdf.test.ts` (depende de T023).
 
 ## Phase 7: Conversores de PDF — US3 (P3)
 
 **Prueba independiente**: PDF con texto→imagen/TXT/DOCX; escaneado se rechaza; merge/split/rotación válidos.
 
-- [ ] T025 [P] [US3] Configurar carga local de pdfjs y workerSrc bajo COEP con prueba en `src/lib/pdfjs.ts`, `src/workers/pdf-read.worker.ts` y `tests/lib/pdfjs.test.ts` (depende de T018).
-- [ ] T026 [US3] Implementar PDF→PNG/JPG y PDF→TXT, incluyendo rechazo de escaneado, con fixtures en `src/converters/pdf-extract.ts`, `src/workers/pdf-read.worker.ts` y `tests/converters/pdf-extract.test.ts` (depende de T025).
-- [ ] T027 [US3] Implementar PDF→DOCX con heurísticas de títulos/párrafos/listas y fixtures en `src/converters/pdf-to-docx.ts`, `src/workers/pdf-read.worker.ts` y `tests/converters/pdf-to-docx.test.ts` (depende de T025).
-- [ ] T028 [P] [US3] Implementar unir/dividir/rotar PDFs y fixtures en `src/converters/pdf-manipulate.ts`, `src/workers/pdf-write.worker.ts` y `tests/converters/pdf-manipulate.test.ts` (depende de T016, T025).
+- [X] T025 [P] [US3] Configurar carga local de pdfjs y workerSrc bajo COEP con prueba en `src/lib/pdfjs.ts`, `src/workers/pdf-read.worker.ts` y `tests/lib/pdfjs.test.ts` (depende de T018).
+- [X] T026 [US3] Implementar PDF→PNG/JPG y PDF→TXT, incluyendo rechazo de escaneado, con fixtures en `src/converters/pdf-extract.ts`, `src/workers/pdf-read.worker.ts` y `tests/converters/pdf-extract.test.ts` (depende de T025).
+- [X] T027 [US3] Implementar PDF→DOCX con heurísticas de títulos/párrafos/listas y fixtures en `src/converters/pdf-to-docx.ts`, `src/workers/pdf-read.worker.ts` y `tests/converters/pdf-to-docx.test.ts` (depende de T025).
+- [X] T028 [P] [US3] Implementar unir/dividir/rotar PDFs y fixtures en `src/converters/pdf-manipulate.ts`, `src/workers/pdf-write.worker.ts` y `tests/converters/pdf-manipulate.test.ts` (depende de T016, T025).
 
 ## Phase 8: Conversores DOCX — US2 (P2)
 
-- [ ] T029 [P] [US2] Implementar DOCX→TXT/HTML con mammoth y fixture en `src/converters/docx-text.ts`, `src/workers/office.worker.ts` y `tests/converters/docx-text.test.ts` (depende de T016–T018).
-- [ ] T030 [US2] Implementar DOCX→PDF con aviso de fidelidad parcial y fixture en `src/converters/docx-to-pdf.ts`, `src/workers/office.worker.ts` y `tests/converters/docx-to-pdf.test.ts` (depende de T029).
+- [X] T029 [P] [US2] Implementar DOCX→TXT/HTML con mammoth y fixture en `src/converters/docx-text.ts`, `src/workers/office.worker.ts` y `tests/converters/docx-text.test.ts` (depende de T016–T018).
+- [X] T030 [US2] Implementar DOCX→PDF con aviso de fidelidad parcial y fixture en `src/converters/docx-to-pdf.ts`, `src/workers/office.worker.ts` y `tests/converters/docx-to-pdf.test.ts` (depende de T029).
 
 ## Phase 9: Batch — US4 (P4)
 
@@ -78,7 +78,7 @@ fixture real en `tests/fixtures/`.
 - [X] T031 [US4] Implementar lectura recursiva de carpetas, reglas de aceptación/rechazo y pruebas en `src/lib/directory-input.ts` y `tests/lib/directory-input.test.ts` (depende de T008–T010, T014).
 - [X] T032 [US4] Implementar ZIP con rutas relativas/colisiones y pruebas en `src/lib/zip.ts` y `tests/lib/zip.test.ts` (depende de T009).
 - [ ] T033 [US4] Integrar lote, scheduler, errores parciales y descarga ZIP en `src/components/FileQueue.tsx`, `src/App.tsx` y `tests/components/batch-flow.test.tsx` (depende de T017, T031–T032).
-- [ ] T034 [P] [US4] Implementar DOCX→XLSX por tablas y fixture en `src/converters/docx-to-xlsx.ts`, `src/workers/office.worker.ts` y `tests/converters/docx-to-xlsx.test.ts` (depende de T022, T029).
+- [X] T034 [P] [US4] Implementar DOCX→XLSX por tablas y fixture en `src/converters/docx-to-xlsx.ts`, `src/workers/office.worker.ts` y `tests/converters/docx-to-xlsx.test.ts` (depende de T022, T029).
 
 ## Phase 10: Audio/video — US5 (P5)
 

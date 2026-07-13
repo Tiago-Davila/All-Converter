@@ -4,20 +4,14 @@ import { loadPdfJs } from '../lib/pdfjs'
 import type { WorkerInput, WorkerOptions } from './types'
 import { extractPdfLayout } from './pdf-layout'
 import { inferDocumentBlocks } from './pdf-docx-structure'
+import { normalizePdfError } from './pdf-errors'
 
 const SCANNED_ERROR = 'El PDF parece ser un escaneo sin texto seleccionable; convertirlo requeriría OCR, que está fuera del alcance de esta versión.'
 const report = (callback: (value: ConversionProgress) => void, percent: number, stage: string) => callback({ percent, stage })
 const baseName = (name: string) => name.replace(/\.[^.]+$/, '')
 
-function pdfLoadError(error: unknown): Error {
-  const name = error instanceof Error ? error.name : ''
-  if (name === 'PasswordException') return new Error('El PDF está protegido con contraseña. Desbloquealo antes de convertirlo.')
-  if (name === 'InvalidPDFException') return new Error('El archivo parece estar dañado o incompleto. Descargalo nuevamente e intentá otra vez.')
-  return error instanceof Error ? error : new Error('No se pudo abrir el PDF. Verificá que el archivo sea válido.')
-}
-
 async function openPdf(input: WorkerInput) {
-  try { const pdfjs = await loadPdfJs(); return await pdfjs.getDocument({ data: input.buffer }).promise } catch (error) { throw pdfLoadError(error) }
+  try { const pdfjs = await loadPdfJs(); return await pdfjs.getDocument({ data: input.buffer }).promise } catch (error) { throw normalizePdfError(error) }
 }
 
 async function pdfText(input: WorkerInput, onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> {
@@ -57,10 +51,11 @@ async function savePdf(pdf: PdfLibDocument, name: string): Promise<ConversionRes
 
 async function manipulate(operation: string, inputs: WorkerInput[], options: WorkerOptions, onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> {
   const { PDFDocument, degrees } = await import('pdf-lib'); const input = inputs[0]; if (!input) throw new Error('Falta el PDF de entrada.')
-  if (operation === 'pdf-merge') { if (inputs.length < 2) throw new Error('Para unir PDFs se necesitan al menos dos archivos.'); const merged = await PDFDocument.create(); for (const [index, source] of inputs.entries()) { const doc = await PDFDocument.load(source.buffer); for (const page of await merged.copyPages(doc, doc.getPageIndices())) merged.addPage(page); report(onProgress, Math.round((index + 1) / inputs.length * 100), `Uniendo ${source.name}`) } return [await savePdf(merged, `${baseName(input.name)}-unido.pdf`)] }
-  const source = await PDFDocument.load(input.buffer)
+  const load = async (source: WorkerInput) => { try { return await PDFDocument.load(source.buffer) } catch (error) { throw normalizePdfError(error) } }
+  if (operation === 'pdf-merge') { if (inputs.length < 2) throw new Error('Para unir PDFs se necesitan al menos dos archivos.'); const merged = await PDFDocument.create(); for (const [index, source] of inputs.entries()) { const doc = await load(source); for (const page of await merged.copyPages(doc, doc.getPageIndices())) merged.addPage(page); report(onProgress, Math.round((index + 1) / inputs.length * 100), `Uniendo ${source.name}`) } return [await savePdf(merged, `${baseName(input.name)}-unido.pdf`)] }
+  const source = await load(input)
   if (operation === 'pdf-split') { const ranges = parseRanges(typeof options.ranges === 'string' ? options.ranges : '', source.getPageCount()); const results: ConversionResult[] = []; for (const [index, [start, end]] of ranges.entries()) { const part = await PDFDocument.create(); const pages = await part.copyPages(source, Array.from({ length: end - start + 1 }, (_, offset) => start - 1 + offset)); pages.forEach((page) => part.addPage(page)); results.push(await savePdf(part, `${baseName(input.name)}-p${start}-${end}.pdf`)); report(onProgress, Math.round((index + 1) / ranges.length * 100), `Rango ${start}-${end}`) } return results }
-  if (operation === 'pdf-rotate') { const angle = typeof options.degrees === 'number' ? options.degrees : 90; if (![90, 180, 270].includes(angle)) throw new Error('La rotación debe ser de 90, 180 o 270 grados.'); const selected = Array.isArray(options.pages) ? options.pages.map(Number) : null; source.getPages().forEach((page, index) => { if (!selected || selected.includes(index + 1)) page.setRotation(degrees((page.getRotation().angle + angle) % 360)) }); report(onProgress, 100, 'Páginas rotadas'); return [await savePdf(source, `${baseName(input.name)}-rotado.pdf`)] }
+  if (operation === 'pdf-rotate') { const angle = typeof options.degrees === 'number' ? options.degrees : 90; if (![90, 180, 270].includes(angle)) throw new Error('La rotación debe ser de 90, 180 o 270 grados.'); const selected = Array.isArray(options.pages) ? options.pages.map(Number) : null; if (selected) { if (!selected.length) throw new Error('Indicá al menos una página para rotar.'); if (selected.some((page) => !Number.isInteger(page) || page < 1 || page > source.getPageCount())) throw new Error(`Las páginas seleccionadas deben estar entre 1 y ${source.getPageCount()}.`); if (new Set(selected).size !== selected.length) throw new Error('La selección de páginas contiene duplicados.') } source.getPages().forEach((page, index) => { if (!selected || selected.includes(index + 1)) page.setRotation(degrees((page.getRotation().angle + angle) % 360)) }); report(onProgress, 100, 'Páginas rotadas'); return [await savePdf(source, `${baseName(input.name)}-rotado.pdf`)] }
   throw new Error(`Operación PDF de escritura desconocida: ${operation}.`)
 }
 

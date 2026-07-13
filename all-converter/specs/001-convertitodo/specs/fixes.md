@@ -41,7 +41,7 @@
 - [X] FIX016 Implementar las heurísticas documentadas de títulos, párrafos y listas para PDF→DOCX.
 - [X] FIX017 Renderizar todas las hojas de XLSX en planilla→PDF sin pérdida silenciosa.
 - [X] FIX018 Reemplazar la detección CSV por un parser que respete quoting y validar JSON tabular plano.
-- [ ] FIX019 Unificar errores accionables de PDF protegido/corrupto y validar rangos/páginas de manipulación.
+- [X] FIX019 Unificar errores accionables de PDF protegido/corrupto y validar rangos/páginas de manipulación.
 
 ## Fase 5 — Media, memoria y offline
 
