@@ -26,7 +26,7 @@ self.onmessage = async ({ data }: MessageEvent<WorkerRequest>) => {
     if (!input) throw new Error('La conversión multimedia requiere un archivo de entrada.')
     const outputName = data.options.outputName
     if (typeof outputName !== 'string') throw new Error('Falta el nombre del archivo de salida.')
-    let mode = preferredFfmpegMode()
+    let mode: FfmpegMode = data.operation === 'mp3-mp4' ? 'single-thread' : preferredFfmpegMode()
     send({ kind: 'progress', jobId: data.jobId, progress: { stage: mode === 'multithread' ? 'Descargando motor multihilo' : 'Modo compatible, conversión más lenta' } })
     try {
       engine = await loadEngine(mode, (percent) => send({ kind: 'progress', jobId: data.jobId, progress: { percent, stage: 'Descargando motor' } }))
@@ -46,12 +46,21 @@ self.onmessage = async ({ data }: MessageEvent<WorkerRequest>) => {
       if (exitCode !== 0) throw new Error('El video no contiene pista de audio.')
     }
     else if (data.operation === 'mp3-mp4') {
+      let durationSeconds = 0
+      const readDuration = ({ message }: { message: string }) => {
+        const match = /Duration: (\d+):(\d+):([\d.]+)/.exec(message)
+        if (match) durationSeconds = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3])
+      }
+      ffmpeg.on('log', readDuration)
+      try { await ffmpeg.exec(['-i', input.name]) } finally { ffmpeg.off('log', readDuration) }
+      if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) throw new Error('No se pudo determinar la duración del audio.')
       const cover = data.inputs[1]
       const coverName = cover?.name ?? 'cover.png'
       if (cover) await ffmpeg.writeFile(coverName, new Uint8Array(cover.buffer))
-      else if (data.options.generateWaveform === true) await ffmpeg.exec(['-i', input.name, '-filter_complex', 'aformat=channel_layouts=mono,showwavespic=s=1280x720:colors=0x22c55e', '-frames:v', '1', coverName])
+      else if (data.options.generateWaveform === true) await ffmpeg.exec(['-i', input.name, '-filter_complex', 'aformat=channel_layouts=mono,showwavespic=s=640x360:colors=0x22c55e', '-frames:v', '1', coverName])
       else throw new Error('Elegí una portada o generá un waveform para crear el video.')
-      await ffmpeg.exec(['-loop', '1', '-framerate', '30', '-i', coverName, '-i', input.name, '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'libx264', '-tune', 'stillimage', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-shortest', outputName])
+      const exitCode = await ffmpeg.exec(['-i', input.name, '-loop', '1', '-framerate', '1', '-i', coverName, '-map', '1:v:0', '-map', '0:a:0', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'stillimage', '-r', '1', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-t', String(durationSeconds), outputName])
+      if (exitCode !== 0) throw new Error('No se pudo crear el video con la portada seleccionada.')
     } else await ffmpeg.exec(['-i', input.name, outputName])
     const output = await ffmpeg.readFile(outputName) as Uint8Array
     const results = [{ name: outputName, mime: outputMime(outputName), buffer: output.buffer as ArrayBuffer, sizeBytes: output.byteLength }]
