@@ -6,7 +6,7 @@ describe('cobertura real de workers por dominio', () => {
   it('image.worker.ts procesa mensajes start', async () => {
     const source = await readFile(new URL('../../src/workers/image.worker.ts', import.meta.url), 'utf8')
     expect(source).toMatch(/data\.kind\s*===\s*['"]cancel['"]/)
-    expect(source).toContain("data.operation !== 'image-convert'")
+    expect(source).toContain('validateImageRequest(data)')
     expect(source).toContain('createImageBitmap')
   })
 

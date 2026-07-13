@@ -2,12 +2,13 @@ import type { ConversionResult } from '../converters/types'
 import { executeZip } from './zip-operations'
 import type { WorkerRequest, WorkerResponse } from './types'
 import { resultTransferables } from './worker-utils'
+import { validateZipRequest } from './validation'
 
 const send = (message: WorkerResponse, transfer?: Transferable[]) => self.postMessage(message, { transfer })
 self.onmessage = async ({ data }: MessageEvent<WorkerRequest>) => {
   if (data.kind === 'cancel') { self.close(); return }
   try {
-    if (data.operation !== 'zip-create') throw new Error(`Operación ZIP desconocida: ${data.operation}.`)
+    validateZipRequest(data)
     send({ kind: 'progress', jobId: data.jobId, progress: { percent: 10, stage: 'Preparando ZIP' } })
     const buffer = await executeZip(data.inputs)
     const results: ConversionResult[] = [{ name: 'convertitodo.zip', mime: 'application/zip', buffer, sizeBytes: buffer.byteLength }]

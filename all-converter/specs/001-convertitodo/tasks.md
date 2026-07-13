@@ -47,7 +47,7 @@ fixture real en `tests/fixtures/`.
 
 - [ ] T019 [P] [US1] Implementar PNG/JPG/WebP con Canvas/compresión, worker y fixture en `src/converters/image.ts`, `src/workers/image.worker.ts` y `tests/converters/image.test.ts` (depende de T010, T016–T018).
 - [X] T020 [US1] Registrar exclusivamente las conversiones de imagen en `src/converters/registry.ts` (depende de T019).
-- [ ] T021 [US1] Implementar imágenes→PDF con orden y fixture en `src/converters/images-to-pdf.ts`, `src/workers/pdf-write.worker.ts` y `tests/converters/images-to-pdf.test.ts` (depende de T019).
+- [X] T021 [US1] Implementar imágenes→PDF con orden y fixture en `src/converters/images-to-pdf.ts`, `src/workers/pdf-write.worker.ts` y `tests/converters/images-to-pdf.test.ts` (depende de T019).
 
 ## Phase 6: Conversores de planillas — US2 (P2)
 

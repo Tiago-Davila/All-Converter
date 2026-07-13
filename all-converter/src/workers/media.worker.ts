@@ -1,6 +1,7 @@
 import { loadFfmpegAssets, preferredFfmpegMode, type FfmpegMode } from '../lib/ffmpeg'
 import type { WorkerRequest, WorkerResponse } from './types'
 import { resultTransferables } from './worker-utils'
+import { validateMediaRequest } from './validation'
 
 const send = (message: WorkerResponse, transfer?: Transferable[]) => self.postMessage(message, { transfer })
 
@@ -21,6 +22,7 @@ self.onmessage = async ({ data }: MessageEvent<WorkerRequest>) => {
 
   let ffmpeg: Awaited<ReturnType<typeof loadEngine>> | undefined
   try {
+    validateMediaRequest(data)
     const input = data.inputs[0]
     if (!input) throw new Error('La conversión multimedia requiere un archivo de entrada.')
     const outputName = data.options.outputName

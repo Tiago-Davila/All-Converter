@@ -2,6 +2,7 @@ import type { ConversionResult } from '../converters/types'
 import { isAnimatedRaster } from '../lib/image-format'
 import type { WorkerRequest, WorkerResponse } from './types'
 import { resultTransferables } from './worker-utils'
+import { validateImageRequest } from './validation'
 
 const send = (message: WorkerResponse, transfer?: Transferable[]) => self.postMessage(message, { transfer })
 
@@ -20,7 +21,7 @@ self.onmessage = async ({ data }: MessageEvent<WorkerRequest>) => {
   if (data.kind === 'cancel') { self.close(); return }
   let bitmap: ImageBitmap | undefined
   try {
-    if (data.operation !== 'image-convert') throw new Error(`Operación de imagen desconocida: ${data.operation}.`)
+    validateImageRequest(data)
     const input = data.inputs[0]
     if (!input) throw new Error('Falta la imagen de entrada.')
     const bytes = new Uint8Array(input.buffer)
