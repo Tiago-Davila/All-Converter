@@ -75,10 +75,10 @@ fixture real en `tests/fixtures/`.
 
 **Prueba independiente**: carpeta de 10 PNG produce ZIP con rutas; tipos mezclados quedan rechazados; fallo parcial conserva éxitos.
 
-- [ ] T031 [US4] Implementar lectura recursiva de carpetas, reglas de aceptación/rechazo y pruebas en `src/lib/directory-input.ts` y `tests/lib/directory-input.test.ts` (depende de T008–T010, T014).
-- [ ] T032 [US4] Implementar ZIP con rutas relativas/colisiones y pruebas en `src/lib/zip.ts` y `tests/lib/zip.test.ts` (depende de T009).
-- [ ] T033 [US4] Integrar lote, scheduler, errores parciales y descarga ZIP en `src/components/FileQueue.tsx`, `src/App.tsx` y `tests/components/batch-flow.test.tsx` (depende de T017, T031–T032).
-- [ ] T034 [P] [US4] Implementar DOCX→XLSX por tablas y fixture en `src/converters/docx-to-xlsx.ts`, `src/workers/office.worker.ts` y `tests/converters/docx-to-xlsx.test.ts` (depende de T022, T029).
+- [X] T031 [US4] Implementar lectura recursiva de carpetas, reglas de aceptación/rechazo y pruebas en `src/lib/directory-input.ts` y `tests/lib/directory-input.test.ts` (depende de T008–T010, T014).
+- [X] T032 [US4] Implementar ZIP con rutas relativas/colisiones y pruebas en `src/lib/zip.ts` y `tests/lib/zip.test.ts` (depende de T009).
+- [X] T033 [US4] Integrar lote, scheduler, errores parciales y descarga ZIP en `src/components/FileQueue.tsx`, `src/App.tsx` y `tests/components/batch-flow.test.tsx` (depende de T017, T031–T032).
+- [X] T034 [P] [US4] Implementar DOCX→XLSX por tablas y fixture en `src/converters/docx-to-xlsx.ts`, `src/workers/office.worker.ts` y `tests/converters/docx-to-xlsx.test.ts` (depende de T022, T029).
 
 ## Phase 10: Audio/video — US5 (P5)
 
