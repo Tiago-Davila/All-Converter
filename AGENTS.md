@@ -54,6 +54,6 @@ con librerías JS/WASM. Los archivos del usuario NUNCA salen de su máquina.
   durante implementación)
 
 ## Estilo de trabajo
-- Commits chicos y descriptivos en español (conventional commits: feat, fix, test, chore), no agregues coautoria al commit.
+- Commits  descriptivos en español (conventional commits: feat, fix, test, chore), no agregues coautoria al commit.
 - Ante ambigüedad entre el pedido y la spec, gana la spec; avisar la discrepancia.
 - No agregar dependencias nuevas sin justificarlas primero.
