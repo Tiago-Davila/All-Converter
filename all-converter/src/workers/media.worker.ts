@@ -1,4 +1,4 @@
-import { loadFfmpegAssets, preferredFfmpegMode, type FfmpegMode } from '../lib/ffmpeg'
+import { downloadFfmpegAssets, preferredFfmpegMode, type FfmpegMode } from '../lib/ffmpeg'
 import type { WorkerRequest, WorkerResponse } from './types'
 import { resultTransferables } from './worker-utils'
 import { validateMediaRequest } from './validation'
@@ -10,17 +10,16 @@ function outputMime(name: string): string {
   return ({ mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', m4a: 'audio/mp4', mp4: 'video/mp4' } as Record<string, string>)[extension ?? ''] ?? 'application/octet-stream'
 }
 
-async function loadEngine(mode: FfmpegMode) {
-  const [{ FFmpeg }, assets] = await Promise.all([import('@ffmpeg/ffmpeg'), loadFfmpegAssets(mode)])
+async function loadEngine(mode: FfmpegMode, onDownload: (percent: number) => void) {
+  const [{ FFmpeg }, downloaded] = await Promise.all([import('@ffmpeg/ffmpeg'), downloadFfmpegAssets(mode, onDownload)])
   const ffmpeg = new FFmpeg()
-  await ffmpeg.load(assets)
-  return ffmpeg
+  try { await ffmpeg.load(downloaded.assets); return { ffmpeg, revoke: downloaded.revoke } } catch (error) { downloaded.revoke(); throw error }
 }
 
 self.onmessage = async ({ data }: MessageEvent<WorkerRequest>) => {
   if (data.kind === 'cancel') { self.close(); return }
 
-  let ffmpeg: Awaited<ReturnType<typeof loadEngine>> | undefined
+  let engine: Awaited<ReturnType<typeof loadEngine>> | undefined
   try {
     validateMediaRequest(data)
     const input = data.inputs[0]
@@ -30,14 +29,15 @@ self.onmessage = async ({ data }: MessageEvent<WorkerRequest>) => {
     let mode = preferredFfmpegMode()
     send({ kind: 'progress', jobId: data.jobId, progress: { stage: mode === 'multithread' ? 'Descargando motor multihilo' : 'Modo compatible, conversión más lenta' } })
     try {
-      ffmpeg = await loadEngine(mode)
+      engine = await loadEngine(mode, (percent) => send({ kind: 'progress', jobId: data.jobId, progress: { percent, stage: 'Descargando motor' } }))
     } catch (error) {
       if (mode !== 'multithread') throw error
       mode = 'single-thread'
       send({ kind: 'progress', jobId: data.jobId, progress: { stage: 'Modo compatible, conversión más lenta' } })
-      ffmpeg = await loadEngine(mode)
+      engine = await loadEngine(mode, (percent) => send({ kind: 'progress', jobId: data.jobId, progress: { percent, stage: 'Descargando motor compatible' } }))
     }
 
+    const ffmpeg = engine.ffmpeg
     send({ kind: 'progress', jobId: data.jobId, progress: { percent: 0, stage: 'Convirtiendo' } })
     ffmpeg.on('progress', ({ progress }) => send({ kind: 'progress', jobId: data.jobId, progress: { percent: Math.round(progress * 100), stage: 'Convirtiendo' } }))
     await ffmpeg.writeFile(input.name, new Uint8Array(input.buffer))
@@ -61,6 +61,7 @@ self.onmessage = async ({ data }: MessageEvent<WorkerRequest>) => {
   } catch (error) {
     send({ kind: 'error', jobId: data.jobId, message: error instanceof Error ? error.message : 'Falló la conversión multimedia' })
   } finally {
-    ffmpeg?.terminate()
+    engine?.ffmpeg.terminate()
+    engine?.revoke()
   }
 }

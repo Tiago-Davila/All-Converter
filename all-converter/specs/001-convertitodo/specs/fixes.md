@@ -45,7 +45,7 @@
 
 ## Fase 5 — Media, memoria y offline
 
-- [ ] FIX020 Reportar progreso real de descarga de los assets ffmpeg.
+- [X] FIX020 Reportar progreso real de descarga de los assets ffmpeg.
 - [ ] FIX021 Añadir un pool exclusivo de concurrencia 1 para audio/video.
 - [ ] FIX022 Transferir portada, audio/video y resultados sin structured clone de buffers.
 - [ ] FIX023 Liberar `ImageBitmap`, blobs, listeners, workers y WASM en bloques `finally`.
