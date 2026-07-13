@@ -3,6 +3,7 @@ import type { ConversionProgress, ConversionResult } from '../converters/types'
 import { loadPdfJs } from '../lib/pdfjs'
 import type { WorkerInput, WorkerOptions } from './types'
 import { extractPdfLayout } from './pdf-layout'
+import { inferDocumentBlocks } from './pdf-docx-structure'
 
 const SCANNED_ERROR = 'El PDF parece ser un escaneo sin texto seleccionable; convertirlo requeriría OCR, que está fuera del alcance de esta versión.'
 const report = (callback: (value: ConversionProgress) => void, percent: number, stage: string) => callback({ percent, stage })
@@ -38,10 +39,15 @@ async function pdfImages(input: WorkerInput, options: WorkerOptions, onProgress:
 }
 
 async function pdfDocx(input: WorkerInput, onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> {
-  const layout = await extractPdfLayout(await openPdf(input), onProgress); const lines = layout.pages.flat()
-  if (!lines.length) throw new Error(SCANNED_ERROR)
-  const { Document, HeadingLevel, Packer, Paragraph, TextRun } = await import('docx'); const sizes = lines.map((line) => line.fontSize).sort((a, b) => a - b); const bodySize = sizes[Math.floor(sizes.length / 2)] ?? 0
-  const paragraphs = lines.map((line) => new Paragraph({ heading: line.fontSize >= bodySize * 1.5 ? HeadingLevel.HEADING_1 : line.fontSize >= bodySize * 1.2 ? HeadingLevel.HEADING_2 : undefined, children: [new TextRun(line.text)] }))
+  const layout = await extractPdfLayout(await openPdf(input), onProgress)
+  if (!layout.text.trim()) throw new Error(SCANNED_ERROR)
+  const { Document, HeadingLevel, Packer, Paragraph, TextRun } = await import('docx')
+  const paragraphs = inferDocumentBlocks(layout.pages).map((block) => new Paragraph({
+    heading: block.kind === 'heading1' ? HeadingLevel.HEADING_1 : block.kind === 'heading2' ? HeadingLevel.HEADING_2 : undefined,
+    bullet: block.kind === 'list' ? { level: block.level } : undefined,
+    pageBreakBefore: block.pageBreakBefore,
+    children: [new TextRun(block.text)],
+  }))
   const blob = await Packer.toBlob(new Document({ sections: [{ children: paragraphs }] })); const buffer = await blob.arrayBuffer(); report(onProgress, 100, 'DOCX creado')
   return [{ name: `${baseName(input.name)}.docx`, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer, sizeBytes: buffer.byteLength }]
 }
