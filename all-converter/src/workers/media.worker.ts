@@ -61,7 +61,10 @@ self.onmessage = async ({ data }: MessageEvent<WorkerRequest>) => {
       else throw new Error('Elegí una portada o generá un waveform para crear el video.')
       const exitCode = await ffmpeg.exec(['-i', input.name, '-loop', '1', '-framerate', '1', '-i', coverName, '-map', '1:v:0', '-map', '0:a:0', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'stillimage', '-r', '1', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-t', String(durationSeconds), outputName])
       if (exitCode !== 0) throw new Error('No se pudo crear el video con la portada seleccionada.')
-    } else await ffmpeg.exec(['-i', input.name, outputName])
+    } else {
+      const exitCode = await ffmpeg.exec(['-i', input.name, outputName])
+      if (exitCode !== 0) throw new Error(`No se pudo convertir el audio a ${outputName.split('.').pop()?.toUpperCase() ?? 'otro formato'}.`)
+    }
     const output = await ffmpeg.readFile(outputName) as Uint8Array
     const results = [{ name: outputName, mime: outputMime(outputName), buffer: output.buffer as ArrayBuffer, sizeBytes: output.byteLength }]
     send({ kind: 'result', jobId: data.jobId, results }, resultTransferables(results))

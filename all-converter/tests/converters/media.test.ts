@@ -11,11 +11,6 @@ describe('media converters', () => {
     expect(mp3ToMp4Converter.limitation).toMatch(/portada.*waveform/i)
     expect(audioConverter.maxSizeMB).toBe(100)
   })
-  it.todo('convierte tests/fixtures/sample.mp4 a un MP3 reproducible')
-  it.todo('rechaza tests/fixtures/silent.mp4 con un mensaje de pista de audio ausente')
-  it.todo('convierte tests/fixtures/sample.mp3 a MP4 con portada y waveform')
-  it.todo('valida conversiones reales MP3/WAV/OGG/M4A')
-
   it('expone únicamente pares compatibles y rechaza identidad', async () => {
     const mp3 = { kind: 'audio', mime: 'audio/mpeg', extension: 'mp3', detection: 'magic-bytes' } as const
     const wav = { kind: 'audio', mime: 'audio/wav', extension: 'wav', detection: 'magic-bytes' } as const
