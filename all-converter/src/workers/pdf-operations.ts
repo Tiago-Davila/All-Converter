@@ -2,6 +2,7 @@ import type { PDFDocument as PdfLibDocument } from 'pdf-lib'
 import type { ConversionProgress, ConversionResult } from '../converters/types'
 import { loadPdfJs } from '../lib/pdfjs'
 import type { WorkerInput, WorkerOptions } from './types'
+import { extractPdfLayout } from './pdf-layout'
 
 const SCANNED_ERROR = 'El PDF parece ser un escaneo sin texto seleccionable; convertirlo requeriría OCR, que está fuera del alcance de esta versión.'
 const report = (callback: (value: ConversionProgress) => void, percent: number, stage: string) => callback({ percent, stage })
@@ -19,10 +20,9 @@ async function openPdf(input: WorkerInput) {
 }
 
 async function pdfText(input: WorkerInput, onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> {
-  const pdf = await openPdf(input); let text = ''
-  for (let page = 1; page <= pdf.numPages; page++) { text += (await (await pdf.getPage(page)).getTextContent()).items.map((item) => 'str' in item ? item.str : '').join(' ') + '\n'; report(onProgress, Math.round(page / pdf.numPages * 100), `Página ${page} de ${pdf.numPages}`) }
-  if (!text.trim()) throw new Error(SCANNED_ERROR)
-  const buffer = new TextEncoder().encode(text).buffer
+  const layout = await extractPdfLayout(await openPdf(input), onProgress)
+  if (!layout.text.trim()) throw new Error(SCANNED_ERROR)
+  const buffer = new TextEncoder().encode(layout.text).buffer
   return [{ name: `${baseName(input.name)}.txt`, mime: 'text/plain', buffer, sizeBytes: buffer.byteLength }]
 }
 
@@ -38,8 +38,7 @@ async function pdfImages(input: WorkerInput, options: WorkerOptions, onProgress:
 }
 
 async function pdfDocx(input: WorkerInput, onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> {
-  const pdf = await openPdf(input); const lines: Array<{ text: string; fontSize: number }> = []
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) { const content = await (await pdf.getPage(pageNumber)).getTextContent(); const rows = new Map<number, { text: string[]; fontSize: number }>(); for (const item of content.items) { if (!('str' in item) || !item.str.trim()) continue; const y = Math.round(item.transform[5]); const fontSize = Math.abs(item.transform[3]) || item.height; const row = rows.get(y) ?? { text: [], fontSize }; row.text.push(item.str); row.fontSize = Math.max(row.fontSize, fontSize); rows.set(y, row) } for (const [, row] of [...rows.entries()].sort(([a], [b]) => b - a)) lines.push({ text: row.text.join(' ').trim(), fontSize: row.fontSize }); report(onProgress, Math.round(pageNumber / pdf.numPages * 80), `Leyendo página ${pageNumber} de ${pdf.numPages}`) }
+  const layout = await extractPdfLayout(await openPdf(input), onProgress); const lines = layout.pages.flat()
   if (!lines.length) throw new Error(SCANNED_ERROR)
   const { Document, HeadingLevel, Packer, Paragraph, TextRun } = await import('docx'); const sizes = lines.map((line) => line.fontSize).sort((a, b) => a - b); const bodySize = sizes[Math.floor(sizes.length / 2)] ?? 0
   const paragraphs = lines.map((line) => new Paragraph({ heading: line.fontSize >= bodySize * 1.5 ? HeadingLevel.HEADING_1 : line.fontSize >= bodySize * 1.2 ? HeadingLevel.HEADING_2 : undefined, children: [new TextRun(line.text)] }))

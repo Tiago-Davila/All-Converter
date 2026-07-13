@@ -37,7 +37,7 @@
 
 ## Fase 4 — Fidelidad y errores documentales
 
-- [ ] FIX015 Crear un extractor PDF compartido con orden por página/Y/X, espacios y saltos coherentes.
+- [X] FIX015 Crear un extractor PDF compartido con orden por página/Y/X, espacios y saltos coherentes.
 - [ ] FIX016 Implementar las heurísticas documentadas de títulos, párrafos y listas para PDF→DOCX.
 - [ ] FIX017 Renderizar todas las hojas de XLSX en planilla→PDF sin pérdida silenciosa.
 - [ ] FIX018 Reemplazar la detección CSV por un parser que respete quoting y validar JSON tabular plano.
