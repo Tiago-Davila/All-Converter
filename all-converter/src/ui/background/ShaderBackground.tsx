@@ -103,14 +103,20 @@ export function ShaderBackground({
     function resize() {
       const dpr = Math.min(window.devicePixelRatio ?? 1, 2)
       const scale = 0.75 * dpr
-      canvas.width  = Math.round(canvas.clientWidth  * scale)
-      canvas.height = Math.round(canvas.clientHeight * scale)
-      gl.viewport(0, 0, canvas.width, canvas.height)
+      // canvas y gl son no-nulos aquí: pasamos por los guards anteriores
+      const c = canvas as HTMLCanvasElement
+      const g = gl as WebGL2RenderingContext
+      c.width  = Math.round(c.clientWidth  * scale)
+      c.height = Math.round(c.clientHeight * scale)
+      g.viewport(0, 0, c.width, c.height)
     }
 
     const ro = new ResizeObserver(resize)
     ro.observe(canvas)
     resize()
+
+    const c = canvas as HTMLCanvasElement
+    const g = gl as WebGL2RenderingContext
 
     function loop(ts: number) {
       if (paused) return
@@ -128,13 +134,13 @@ export function ShaderBackground({
 
       fpsGuard.tick(ts)
 
-      gl.uniform2f(uRes, canvas.width, canvas.height)
-      gl.uniform1f(uTime, elapsed / 1000)
-      gl.uniform1f(uInt, currentIntensity)
-      gl.uniform1f(uFocus, focusValue)
-      gl.uniform1f(uWarm, warmup)
+      g.uniform2f(uRes, c.width, c.height)
+      g.uniform1f(uTime, elapsed / 1000)
+      g.uniform1f(uInt, currentIntensity)
+      g.uniform1f(uFocus, focusValue)
+      g.uniform1f(uWarm, warmup)
 
-      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+      g.drawArrays(g.TRIANGLE_STRIP, 0, 4)
     }
 
     rafId = requestAnimationFrame(loop)
