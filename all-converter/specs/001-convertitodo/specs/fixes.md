@@ -22,7 +22,7 @@
 ## Fase 2 — Sacar procesamiento pesado del main thread
 
 - [X] FIX005 Implementar conversión real en `src/workers/image.worker.ts` y dejar `src/converters/image.ts` como adaptador puro.
-- [ ] FIX006 Implementar operaciones SheetJS, mammoth, docx y jsPDF en `src/workers/office.worker.ts` y migrar los conversores Office.
+- [X] FIX006 Implementar operaciones SheetJS, mammoth, docx y jsPDF en `src/workers/office.worker.ts` y migrar los conversores Office.
 - [ ] FIX007 Implementar lectura/render/extracción en `src/workers/pdf-read.worker.ts` y escritura/manipulación en `src/workers/pdf-write.worker.ts`.
 - [ ] FIX008 Cargar JSZip dinámicamente fuera del entry y ejecutar compresión pesada en worker.
 - [ ] FIX009 Probar que cancelar cualquier conversión pesada termina el worker y resuelve en menos de un segundo.
