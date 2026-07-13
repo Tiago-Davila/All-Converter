@@ -7,6 +7,19 @@ function isTabularJson(value: unknown): value is Record<string, unknown>[] {
   return Array.isArray(value) && value.length > 0 && value.every((row) => typeof row === 'object' && row !== null && !Array.isArray(row))
 }
 
+function decodeCsv(bytes: ArrayBuffer): { text: string; separator: string } {
+  let text = new TextDecoder('utf-8').decode(bytes)
+  if (text.includes('\uFFFD')) text = new TextDecoder('windows-1252').decode(bytes)
+  if (text.includes('\uFFFD')) throw new Error('El CSV no se puede leer. Reexportalo como UTF-8.')
+  const rows = text.split(/\r?\n/).filter(Boolean).slice(0, 20)
+  const separator = [',', ';', '\t', '|'].find((candidate) => {
+    const counts = rows.map((row) => row.split(candidate).length)
+    return counts[0] > 1 && counts.every((count) => count === counts[0])
+  })
+  if (!separator) throw new Error('El CSV no tiene columnas consistentes. Reexportalo como UTF-8 con un delimitador válido.')
+  return { text, separator }
+}
+
 export const spreadsheetConverter: Converter = { id: 'spreadsheet-convert', label: 'Convertir planilla', from: ['spreadsheet'], to: 'csv|json|xlsx', maxSizeMB: 25,
   async convert(file, onProgress, options, signal) {
     if (signal.aborted) throw new DOMException('Cancelado', 'AbortError')
@@ -21,7 +34,8 @@ export const spreadsheetConverter: Converter = { id: 'spreadsheet-convert', labe
       workbook = xlsx.utils.book_new()
       xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(parsed), 'Datos')
     } else if (file.name.toLowerCase().endsWith('.csv') || file.type === 'text/csv') {
-      workbook = xlsx.read(await file.text(), { type: 'string' })
+      const csv = decodeCsv(await file.arrayBuffer())
+      workbook = xlsx.read(csv.text, { type: 'string', FS: csv.separator })
     } else {
       workbook = xlsx.read(await file.arrayBuffer(), { type: 'array' })
     }
