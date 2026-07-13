@@ -1,5 +1,6 @@
 import type { ConversionProgress, ConversionResult } from '../converters/types'
 import type { WorkerInput, WorkerOptions } from './types'
+import { decodeCsv, isFlatTabularJson } from './tabular'
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
@@ -7,19 +8,6 @@ function progress(callback: (value: ConversionProgress) => void, percent: number
 function baseName(name: string) { return name.replace(/\.[^.]+$/, '') }
 function decodeEntities(value: string): string { return value.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ') }
 function cellText(html: string): string { return decodeEntities(html.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim() }
-
-function isTabularJson(value: unknown): value is Record<string, unknown>[] {
-  return Array.isArray(value) && value.length > 0 && value.every((row) => typeof row === 'object' && row !== null && !Array.isArray(row))
-}
-
-function decodeCsv(bytes: ArrayBuffer): { text: string; separator: string } {
-  let text = new TextDecoder('utf-8').decode(bytes)
-  if (text.includes('\uFFFD')) text = new TextDecoder('windows-1252').decode(bytes)
-  const rows = text.split(/\r?\n/).filter(Boolean).slice(0, 20)
-  const separator = [',', ';', '\t', '|'].find((candidate) => { const counts = rows.map((row) => row.split(candidate).length); return counts[0] > 1 && counts.every((count) => count === counts[0]) })
-  if (!separator) throw new Error('El CSV no tiene columnas consistentes. Reexportalo como UTF-8 con un delimitador válido.')
-  return { text, separator }
-}
 
 async function spreadsheet(input: WorkerInput, options: WorkerOptions, onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> {
   const xlsx = await import('xlsx')
@@ -29,10 +17,10 @@ async function spreadsheet(input: WorkerInput, options: WorkerOptions, onProgres
   if (isJson) {
     let parsed: unknown
     try { parsed = JSON.parse(new TextDecoder().decode(input.buffer)) } catch { throw new Error('El archivo no es un JSON válido.') }
-    if (!isTabularJson(parsed)) throw new Error('El JSON no es tabular: se espera un array de objetos planos.')
+    if (!isFlatTabularJson(parsed)) throw new Error('El JSON no es tabular: se espera un array de objetos planos con valores escalares.')
     workbook = xlsx.utils.book_new(); xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(parsed), 'Datos')
   } else if (input.name.toLowerCase().endsWith('.csv') || input.mime === 'text/csv') {
-    const csv = decodeCsv(input.buffer); workbook = xlsx.read(csv.text, { type: 'string', FS: csv.separator })
+    const csv = decodeCsv(input.buffer); workbook = xlsx.utils.book_new(); xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet(csv.rows), 'Datos')
   } else workbook = xlsx.read(input.buffer, { type: 'array' })
   progress(onProgress, 50, 'Datos leídos')
   const base = baseName(input.name)

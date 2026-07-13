@@ -57,4 +57,9 @@ describe('spreadsheet converter', () => {
     const file = new File(['{"a":1}'], 'objeto.json', { type: 'application/json' })
     await expect(spreadsheetConverter.convert(file, noop, { target: 'xlsx' }, signal)).rejects.toThrow('no es tabular')
   })
+
+  it('rechaza JSON con objetos o arrays anidados', async () => {
+    const file = new File(['[{"nombre":"Ada","meta":{"rol":"ingeniera"}}]'], 'anidado.json', { type: 'application/json' })
+    await expect(spreadsheetConverter.convert(file, noop, { target: 'xlsx' }, signal)).rejects.toThrow('objetos planos')
+  })
 })
