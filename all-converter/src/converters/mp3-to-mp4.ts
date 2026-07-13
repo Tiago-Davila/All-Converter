@@ -1,0 +1,2 @@
+import type { Converter } from './types'; import { runMedia } from './media'
+export const mp3ToMp4Converter: Converter = { id: 'mp3-to-mp4', label: 'MP3 a MP4', from: ['audio'], to: 'mp4', maxSizeMB: 100, limitation: 'Requiere portada o waveform.', async convert(file, progress, options, signal) { return runMedia(file, { operation: 'mp3-mp4', outputName: `${file.name.replace(/\.[^.]+$/, '')}.mp4`, cover: options.cover }, progress, signal) } }
