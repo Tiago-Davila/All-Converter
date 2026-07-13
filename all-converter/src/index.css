@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./ui/a11y/surface.css";
 
-:root { color-scheme: light; font-family: system-ui, sans-serif; /* fallback sin red hasta incorporar fuente local */ }
+:root { color-scheme: dark; font-family: system-ui, sans-serif; /* fallback sin red: tipografía self-hosteada llega con el mockup (DEP-001) */ }
 body { margin: 0; min-width: 320px; }
