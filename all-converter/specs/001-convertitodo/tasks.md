@@ -73,7 +73,7 @@ fixture real en `tests/fixtures/`.
 
 ## Phase 9: Batch — US4 (P4)
 
-**Prueba independiente**: carpeta de 10 PNG produce ZIP con rutas; tipos mezclados quedan rechazados; fallo parcial conserva éxitos.
+**Prueba independiente** *(enmendada 2026-07-13)*: carpeta de hasta 10 archivos **de tipos mezclados** produce ZIP con rutas, cada resultado en el formato elegido para su archivo; fallo parcial conserva éxitos.
 
 - [X] T031 [US4] Implementar lectura recursiva de carpetas, reglas de aceptación/rechazo y pruebas en `src/lib/directory-input.ts` y `tests/lib/directory-input.test.ts` (depende de T008–T010, T014).
 - [X] T032 [US4] Implementar ZIP con rutas relativas/colisiones y pruebas en `src/lib/zip.ts` y `tests/lib/zip.test.ts` (depende de T009).
@@ -106,6 +106,26 @@ fixture real en `tests/fixtures/`.
 - Tras T018, las fases de imágenes (T019), planillas (T022–T024), PDF (T025–T028) y DOCX (T029–T030) pueden avanzar en paralelo con archivos distintos.
 - Batch depende del núcleo y de resultados de conversores; media depende de workers y Vercel; pulido depende de los incrementos deseados.
 
+## Phase 13: Enmienda — Lotes heterogéneos y destino por archivo (FR-023 / FR-023b / FR-023c)
+
+**Motivo**: enmienda del 2026-07-13 (ver `spec.md` §Enmiendas). Se levanta la restricción
+mono-formato: la cola admite hasta 10 archivos de formatos mezclados, y **cada archivo elige
+su propio formato destino** entre los válidos para su tipo.
+
+**Prueba independiente**: soltar una carpeta con 4 PNG + 3 PDF + 2 MP3, asignar un destino
+distinto a cada archivo, convertir, y obtener un ZIP con los 9 resultados en sus formatos
+respectivos.
+
+- [ ] T047 [US4] Eliminar la regla de rechazo por formato distinto al del lote (`batchFormat` y el motivo "Formato distinto al del lote actual") conservando `MAX_BATCH_FILES = 10`, en `src/lib/directory-input.ts`. Invertir el test que hoy afirma que los tipos mezclados se rechazan: ahora deben aceptarse, en `tests/lib/directory-input.test.ts`. Cubre FR-023. (Sin dependencias; es la base de la enmienda.)
+- [ ] T048 [US4] Modelar el formato destino **por archivo** en lugar de por lote: cada entrada de la cola pasa a tener su propio destino, y los destinos ofrecidos derivan del registry según el tipo detectado de ese archivo. Actualizar `src/converters/types.ts` y/o el estado de la cola según corresponda, con pruebas en `tests/lib/directory-input.test.ts`. Cubre FR-023b. (Depende de T047.)
+- [ ] T049 [US4] Exponer un selector de destino por fila en la cola, mostrando solo los formatos válidos para el tipo de ese archivo, y señalar las filas sin destino elegido. En `src/components/FileQueue.tsx` y `src/App.tsx`, con pruebas en `tests/components/batch-flow.test.tsx`. Cubre FR-023b y FR-023c. (Depende de T048.)
+- [ ] T050 [US4] Ajustar la conversión en lote para procesar cada archivo hacia **su** destino, omitiendo (sin bloquear) los que no tengan destino elegido, y verificar el ZIP resultante con un lote mixto real. En `src/App.tsx` y `tests/components/batch-flow.test.tsx`, con fixtures mixtos existentes. Cubre FR-023c y SC-008. (Depende de T049.)
+- [ ] T051 [US4] Revisar y actualizar los tests y textos que asumían lote homogéneo (incluida la invariante "10 homogéneos por lote" documentada en `specs/001-convertitodo/data-model.md`), y ejecutar la suite completa. (Depende de T047–T050.)
+
 ## Estrategia de entrega
 
 MVP: T001–T021 y T045 (US1 completo: imagen, preview y descarga). Después, Office/DOCX (US2), PDF (US3), lote (US4), media (US5) y privacidad/offline final (US6). Cada tarea se valida y se commitea aisladamente.
+
+**Enmienda 2026-07-13**: T047–T051 se ejecutan en orden estricto (cada una depende de la
+anterior). T047 es la que desbloquea todo: mientras el rechazo por formato siga vivo, la UI de
+destino por archivo no tiene archivos mixtos sobre los que operar.

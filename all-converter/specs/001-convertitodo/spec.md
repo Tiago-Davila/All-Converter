@@ -13,7 +13,7 @@
 ### Session 2026-07-12
 
 - Q: ¿Postura sobre telemetría que no involucra archivos (analytics, error reporting)? → A: Cero telemetría: ninguna solicitud saliente en runtime más allá de la carga de la propia app y sus recursos.
-- Q: ¿Máximo de archivos por lote/cola? → A: 10 archivos como máximo, todos del mismo formato de origen y hacia un único formato destino. Lotes con formatos mezclados quedan fuera de alcance.
+- Q: ¿Máximo de archivos por lote/cola? → A: 10 archivos como máximo. **(ENMENDADO 2026-07-13, ver Enmiendas)** Originalmente exigía que fueran todos del mismo formato de origen y hacia un único destino; esa restricción fue levantada.
 - Q: ¿Nivel de accesibilidad exigido? → A: Básica: flujo completo operable por teclado, controles etiquetados para lectores de pantalla, contraste suficiente y foco visible. WCAG AA formal queda como mejora futura.
 - Q: ¿Conversiones pesadas (audio/video) en dispositivos móviles? → A: Bloqueadas en móvil con mensaje explicativo; solo disponibles en desktop.
 - Q: ¿Qué límites máximos por archivo aplican? → A: Imagen: 50 MB; PDF/documentos/planillas: 25 MB; audio: 100 MB; video: 250 MB.
@@ -140,28 +140,38 @@ resultado tiene la suma de páginas en orden.
 
 ### User Story 4 - Convertir en lote y carpetas completas (Priority: P4)
 
-Una persona tiene una carpeta con fotos que necesita en otro formato, o varios
-documentos del mismo tipo. Arrastra la carpeta completa (o selecciona varios
-archivos), la app admite hasta 10 archivos del mismo formato, elige un único formato
-destino para todos, y la app los convierte en cola mostrando progreso individual y
-global. Al terminar descarga todos los resultados como un único ZIP.
+Una persona tiene una carpeta con archivos de **distintos tipos** (fotos, documentos,
+audios) que necesita convertir. Arrastra la carpeta completa (o selecciona varios
+archivos), la app admite hasta 10 archivos **de cualquier combinación de formatos**,
+elige **un formato destino para cada archivo** entre los que su tipo admite, y la app
+los convierte en cola mostrando progreso individual y global. Al terminar descarga
+todos los resultados como un único ZIP.
 
 **Why this priority**: el procesamiento por lote multiplica el valor de cada conversor
 ya existente, pero requiere que las historias 1-3 provean conversores que ejecutar.
 
-**Independent Test**: se prueba arrastrando una carpeta con 10 imágenes PNG reales,
-convirtiéndolas a JPG en una sola operación y verificando que el ZIP descargado
-contiene 10 JPG válidos.
+**Independent Test**: se prueba arrastrando una carpeta con archivos mezclados reales
+(p. ej. 4 PNG, 3 PDF y 2 MP3), eligiendo un destino distinto para cada uno y
+verificando que el ZIP descargado contiene los 9 resultados válidos en sus formatos
+respectivos.
 
 **Acceptance Scenarios**:
 
-1. **Given** una carpeta con archivos arrastrada a la app, **When** la app la procesa,
-   **Then** los archivos del mismo formato que el primero aceptado (incluidos los de
-   subcarpetas) entran a la cola hasta el máximo de 10, y el resto (formato distinto,
-   no soportado o excedente del límite) se lista como rechazado con motivo.
-2. **Given** 10 imágenes del mismo tipo en la cola, **When** el usuario elige un
-   formato destino y convierte, **Then** se procesan de a 2 simultáneas como máximo,
-   mostrando progreso por archivo y progreso global.
+1. **Given** una carpeta con archivos de tipos mezclados arrastrada a la app, **When**
+   la app la procesa, **Then** todos los archivos soportados (incluidos los de
+   subcarpetas) entran a la cola hasta el máximo de 10, sin importar que sus formatos
+   difieran entre sí; solo se rechazan los no soportados, los vacíos, los que exceden
+   el tamaño y los excedentes del límite de 10, cada uno con su motivo.
+2. **Given** una cola con archivos de distintos tipos, **When** el usuario elige un
+   formato destino **para cada archivo** y convierte, **Then** se procesan de a 2
+   simultáneas como máximo, mostrando progreso por archivo y progreso global, y cada
+   resultado sale en el formato elegido para ese archivo.
+2b. **Given** un archivo en la cola sin formato destino elegido, **When** el usuario
+   convierte, **Then** ese archivo no se convierte y se lo señala como pendiente de
+   elección, mientras el resto de la cola se procesa con normalidad.
+2c. **Given** un archivo de un tipo dado, **When** el usuario abre su selector de
+   destino, **Then** solo se le ofrecen los formatos que el registry declara válidos
+   para ese tipo de origen.
 3. **Given** un lote convertido con éxito, **When** el usuario descarga, **Then**
    obtiene un único ZIP que replica las subcarpetas originales; cada resultado
    conserva su ruta relativa con la nueva extensión.
@@ -254,11 +264,12 @@ visible sin scroll en la pantalla inicial.
   JPEG (manda el tipo real detectado por contenido); un archivo `documento.docx` que
   no es un DOCX real se rechaza indicando el tipo detectado. La extensión solo se usa
   como fallback cuando el contenido no alcanza para identificar el tipo.
-- **Carpeta con tipos mezclados**: al arrastrar una carpeta con imágenes, PDFs y
-  archivos no soportados, solo entran a la cola (hasta 10) los archivos del mismo
-  formato que el primero aceptado; los demás se listan como rechazados indicando el
-  motivo (formato distinto al del lote, tipo no soportado o límite excedido). Los
-  lotes heterogéneos quedan fuera de alcance.
+- **Carpeta con tipos mezclados** *(enmendado 2026-07-13)*: al arrastrar una carpeta con
+  imágenes, PDFs y archivos no soportados, entran a la cola (hasta 10) **todos los
+  archivos soportados sin importar su formato**, cada uno con su propio selector de
+  destino. Solo se listan como rechazados los de tipo no soportado, los vacíos, los que
+  exceden el tamaño y los excedentes del límite de 10, indicando el motivo. Los lotes
+  heterogéneos **están dentro de alcance**.
 - **Cancelación a mitad de conversión**: cancelar una conversión en curso detiene el
   trabajo, libera los recursos, no deja descargas parciales y devuelve el archivo al
   estado "listo" para reintentar. En un lote, cancelar detiene los trabajos en curso y
@@ -351,11 +362,20 @@ visible sin scroll en la pantalla inicial.
 
 #### Conversión por lote (Fase 2)
 
-- **FR-023**: El sistema MUST permitir convertir hasta 10 archivos del mismo formato
-  de origen a un mismo formato destino en una sola operación. Los archivos que
-  excedan el límite de 10, o cuyo formato difiera del formato del lote en curso, se
-  rechazan con mensaje que explique el motivo. Los lotes con formatos de origen
-  mezclados quedan fuera de alcance.
+- **FR-023** *(enmendado 2026-07-13)*: El sistema MUST permitir convertir hasta **10
+  archivos en total** en una sola operación, **con formatos de origen mezclados**. Los
+  archivos que excedan el límite de 10 se rechazan con un mensaje que explique el motivo.
+  Un archivo MUST NOT rechazarse por tener un formato de origen distinto al de otro
+  archivo de la cola.
+- **FR-023b** *(nuevo 2026-07-13)*: Cada archivo de la cola MUST tener su **propio formato
+  destino**, elegido de forma independiente entre los destinos que el registry declare
+  válidos **para el tipo detectado de ese archivo**. El sistema MUST NOT exigir un destino
+  común para todos los archivos, ni ofrecer para un archivo un destino que su tipo de
+  origen no admita.
+- **FR-023c** *(nuevo 2026-07-13)*: Un archivo sin formato destino elegido MUST NOT
+  convertirse, y el sistema MUST indicar claramente cuáles archivos están a la espera de
+  esa elección. La operación de conversión MUST procesar los archivos que sí tengan
+  destino, sin bloquearse por los que no.
 - **FR-024**: El sistema MUST procesar la cola con exactamente 2 conversiones
   simultáneas como máximo (las demás esperan en estado "en cola"), sin degradar la
   fluidez de la interfaz.
@@ -471,8 +491,10 @@ visible sin scroll en la pantalla inicial.
 - **SC-007**: El 100% de los casos de error previstos (archivo corrupto, tipo no
   soportado, tamaño excedido, PDF escaneado, PDF con contraseña, MP4 sin audio, DOCX
   sin tablas) produce un mensaje específico y accionable, no un error genérico.
-- **SC-008**: Un lote de 10 imágenes del mismo formato se convierte en una sola
-  operación y se descarga como un único ZIP con los 10 resultados correctos.
+- **SC-008** *(enmendado 2026-07-13)*: Un lote de 10 archivos **de formatos mezclados**,
+  con un destino elegido individualmente para cada uno, se convierte en una sola
+  operación y se descarga como un único ZIP con los 10 resultados correctos, cada uno en
+  el formato que se le asignó.
 - **SC-009**: Con la app ya cargada y sin conexión, una conversión de imagen usada
   previamente en esa sesión se completa con éxito.
 - **SC-010**: Cancelar una conversión en curso surte efecto en menos de 1 segundo y
@@ -503,10 +525,11 @@ visible sin scroll en la pantalla inicial.
   sus subcarpetas y cada resultado conserva su ruta relativa y nombre base con la
   nueva extensión. Las colisiones dentro de una misma ruta se resuelven con sufijos
   numéricos.
-- **Fuera de alcance confirmado**: PDF→DOCX con fidelidad de layout, OCR de PDFs
-  escaneados, PPTX y formatos de presentación, cuentas de usuario, historial,
-  compartir por link, cualquier conversión en servidor, y lotes con más de 10
-  archivos o con formatos de origen mezclados.
+- **Fuera de alcance confirmado** *(enmendado 2026-07-13)*: PDF→DOCX con fidelidad de
+  layout, OCR de PDFs escaneados, PPTX y formatos de presentación, cuentas de usuario,
+  historial, compartir por link, cualquier conversión en servidor, y lotes con más de 10
+  archivos. Los **lotes con formatos de origen mezclados ya NO están fuera de alcance**:
+  pasaron a ser el comportamiento normal (FR-023).
 
 ## Ambigüedades resueltas
 
@@ -518,3 +541,38 @@ Las tres ambigüedades detectadas fueron resueltas con el propietario del proyec
 2. **FR-013 — JSON→XLSX**: incluido en el alcance, limitado a JSON tabular (array de
    objetos planos).
 3. **XLSX multihoja**: se exporta un archivo por hoja (ZIP si resultan varios).
+
+## Enmiendas
+
+### 2026-07-13 — Lotes heterogéneos y destino por archivo
+
+**Motivo**: la feature 002 (capa de experiencia) especificó una cola agrupada por categoría
+con archivos de tipos mezclados. Eso era incompatible con el FR-023 original, que declaraba
+los lotes heterogéneos fuera de alcance y rechazaba todo archivo cuyo formato difiriera del
+primero aceptado. Se decidió que gana el modelo de 002: la restricción mono-formato se
+levanta.
+
+**Cambios**:
+
+- **FR-023**: ya no exige un único formato de origen ni un único destino común. Se conserva
+  el tope de **10 archivos en total**, ahora de formatos mezclados.
+- **FR-023b** (nuevo): cada archivo elige **su propio formato destino**, entre los que el
+  registry declare válidos para su tipo detectado.
+- **FR-023c** (nuevo): un archivo sin destino elegido no se convierte, pero no bloquea al
+  resto de la cola.
+- **User Story 4**: reescrita para lotes mixtos con destino por archivo.
+- **Edge case "carpeta con tipos mezclados"**: ya no rechaza por formato distinto.
+- **SC-008**: ahora mide un lote de 10 archivos mezclados con destinos individuales.
+- **Fuera de alcance**: se retira "lotes con formatos de origen mezclados"; se conserva el
+  tope de 10 archivos.
+
+**Impacto en código y tests** (a ejecutar en la fase de implementación):
+
+- `src/lib/directory-input.ts`: eliminar la regla `batchFormat` que rechaza por formato
+  distinto (el rechazo `Formato distinto al del lote actual`). Conservar `MAX_BATCH_FILES`.
+- `src/components/FileQueue.tsx` y `src/App.tsx`: el formato destino pasa de ser un valor
+  único del lote a un valor **por archivo**, derivado de los destinos válidos del tipo de
+  cada uno.
+- `tests/lib/directory-input.test.ts`: el test que hoy afirma que los tipos mezclados se
+  rechazan debe invertirse: ahora deben aceptarse.
+- `tests/components/batch-flow.test.tsx`: cubrir un lote mixto con destinos distintos.
