@@ -44,3 +44,15 @@ body {
   background-color: color-mix(in srgb, var(--ct-base) calc(var(--ct-scrim-alpha) * 100%), transparent);
   border-radius: var(--ct-radius-md);
 }
+
+/**
+ * Foco visible global (Principio XII / FR-041): todo control operable con teclado
+ * recibe este anillo. focus-ring cumple 3:1 contra SURFACE (verificado en T004).
+ * Ningún componente MUST NOT quitar el outline sin reemplazarlo por un indicador
+ * equivalente o mejor: si hace falta un estilo de foco distinto, se reemplaza esta
+ * regla de forma explícita, nunca con `outline: none` suelto (ver focus.test.tsx).
+ */
+:focus-visible {
+  outline: 2px solid var(--ct-focus-ring);
+  outline-offset: 2px;
+}
