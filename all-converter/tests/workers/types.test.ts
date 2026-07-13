@@ -39,4 +39,11 @@ describe('canal tipado de workers', () => {
       { name: 'b', mime: 'text/plain', buffer: second, sizeBytes: 3 },
     ])).toEqual([first, second])
   })
+
+  it('los transferibles se entregan sin copia', () => {
+    const buffer = new Uint8Array([1, 2, 3]).buffer
+    const request: WorkerStartRequest = { kind: 'start', jobId: 'job', operation: 'test', inputs: [{ name: 'input', buffer }], options: {} }
+    structuredClone(request, { transfer: requestTransferables(request) })
+    expect(buffer.byteLength).toBe(0)
+  })
 })

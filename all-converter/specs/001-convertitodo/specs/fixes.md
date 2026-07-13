@@ -17,7 +17,7 @@
 - [X] FIX001 Reabrir la trazabilidad incorrecta en `specs/001-convertitodo/tasks.md` y añadir pruebas de caracterización que demuestren los gaps actuales de workers, multimedia, imagen real y WebP en `tests/workers/worker-coverage.test.ts`, `tests/converters/media.test.ts`, `tests/converters/image.test.ts` y `tests/converters/images-to-pdf.test.ts`.
 - [X] FIX002 Rediseñar el canal worker para soportar múltiples entradas transferibles, opciones tipadas, progreso, resultado, error y cancelación en `src/workers/types.ts`, `src/workers/worker-utils.ts` y `tests/workers/types.test.ts`.
 - [X] FIX003 Corregir el ciclo de vida del cliente worker y migrar `runMedia()` al cliente común, cubriendo `onerror`, `onmessageerror`, rechazo de lectura, cleanup de listeners y settle único en `src/workers/client.ts`, `src/converters/media.ts` y `tests/workers/client.test.ts`.
-- [ ] FIX004 Garantizar buffers transferidos, aborto efectivo y resultados del scheduler en orden de entrada mediante pruebas en `src/lib/job-scheduler.ts`, `tests/lib/job-scheduler.test.ts`, `tests/workers/client.test.ts` y `tests/workers/types.test.ts`.
+- [X] FIX004 Garantizar buffers transferidos, aborto efectivo y resultados del scheduler en orden de entrada mediante pruebas en `src/lib/job-scheduler.ts`, `tests/lib/job-scheduler.test.ts`, `tests/workers/client.test.ts` y `tests/workers/types.test.ts`.
 
 ## Fase 2 — Sacar procesamiento pesado del main thread
 

@@ -35,8 +35,8 @@ fixture real en `tests/fixtures/`.
 ## Phase 4: Infraestructura de workers
 
 - [X] T015 Crear canal tipado `start/progress/result/error/cancel` y prueba de contratos en `src/workers/types.ts` y `tests/workers/types.test.ts` (depende de T007).
-- [ ] T016 Implementar fábrica de workers, transferibles, AbortController y terminación, con mock y pruebas en `src/workers/client.ts`, `src/workers/worker-utils.ts` y `tests/workers/client.test.ts` (depende de T015).
-- [ ] T017 Implementar scheduler de dos trabajos, progreso global y cancelación de lote con pruebas en `src/lib/job-scheduler.ts` y `tests/lib/job-scheduler.test.ts` (depende de T015–T016).
+- [X] T016 Implementar fábrica de workers, transferibles, AbortController y terminación, con mock y pruebas en `src/workers/client.ts`, `src/workers/worker-utils.ts` y `tests/workers/client.test.ts` (depende de T015).
+- [X] T017 Implementar scheduler de dos trabajos, progreso global y cancelación de lote con pruebas en `src/lib/job-scheduler.ts` y `tests/lib/job-scheduler.test.ts` (depende de T015–T016).
 - [ ] T018 Implementar cargador dinámico por dominio y medición de chunks en `src/lib/lazy-loader.ts` y `tests/lib/lazy-loader.test.ts` (depende de T016).
 
 ## Phase 5: Conversores de imágenes — US1 (P1)
