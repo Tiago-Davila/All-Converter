@@ -3,6 +3,7 @@ import type { FileEntry } from './converters/types'
 import { intakeFiles, type IncomingFile } from './lib/directory-input'
 import { Dropzone } from './components/Dropzone'
 import { FileQueue } from './components/FileQueue'
+import { PrivacyNotice } from './components/PrivacyNotice'
 
 export function App() {
   const [entries, setEntries] = useState<FileEntry[]>([])
@@ -12,5 +13,5 @@ export function App() {
     entriesRef.current = [...entriesRef.current, ...added]
     setEntries(entriesRef.current)
   }
-  return <main><h1>ConvertiTodo</h1><Dropzone onFiles={(files) => { void addFiles(files) }} /><FileQueue entries={entries} /></main>
+  return <main><h1>ConvertiTodo</h1><PrivacyNotice /><Dropzone onFiles={(files) => { void addFiles(files) }} /><FileQueue entries={entries} /></main>
 }
