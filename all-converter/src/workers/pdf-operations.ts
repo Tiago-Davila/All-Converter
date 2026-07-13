@@ -59,7 +59,20 @@ async function manipulate(operation: string, inputs: WorkerInput[], options: Wor
   throw new Error(`Operación PDF de escritura desconocida: ${operation}.`)
 }
 
-async function imagesPdf(inputs: WorkerInput[], onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> { const { PDFDocument } = await import('pdf-lib'); const pdf = await PDFDocument.create(); for (const [index, input] of inputs.entries()) { const image = input.mime === 'image/png' ? await pdf.embedPng(input.buffer) : await pdf.embedJpg(input.buffer); const page = pdf.addPage([image.width, image.height]); page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height }); report(onProgress, Math.round((index + 1) / inputs.length * 100), `Imagen ${index + 1} de ${inputs.length}`) } const result = await savePdf(pdf, `${baseName(inputs[0].name)}.pdf`); return [result] }
+async function rasterizeWebp(input: WorkerInput): Promise<ArrayBuffer> {
+  const bitmap = await createImageBitmap(new Blob([input.buffer], { type: 'image/webp' }))
+  try {
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('No se pudo rasterizar la imagen WebP.')
+    context.drawImage(bitmap, 0, 0)
+    return (await canvas.convertToBlob({ type: 'image/png' })).arrayBuffer()
+  } finally {
+    bitmap.close()
+  }
+}
+
+async function imagesPdf(inputs: WorkerInput[], onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> { const { PDFDocument } = await import('pdf-lib'); const pdf = await PDFDocument.create(); for (const [index, input] of inputs.entries()) { const isWebp = input.mime === 'image/webp' || input.name.toLowerCase().endsWith('.webp'); const bytes = isWebp ? await rasterizeWebp(input) : input.buffer; const image = input.mime === 'image/png' || isWebp ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes); const page = pdf.addPage([image.width, image.height]); page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height }); report(onProgress, Math.round((index + 1) / inputs.length * 100), `Imagen ${index + 1} de ${inputs.length}`) } const result = await savePdf(pdf, `${baseName(inputs[0].name)}.pdf`); return [result] }
 
 export async function executePdfOperation(operation: string, inputs: WorkerInput[], options: WorkerOptions, onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> {
   const input = inputs[0]; if (!input) throw new Error('Falta el archivo de entrada.')

@@ -32,7 +32,7 @@
 - [X] FIX010 Reemplazar el dispatch basado solo en `FileKind` por fuentes MIME/extensión explícitas en el contrato `Converter` y el registry.
 - [X] FIX011 Restringir audio/video a los pares trazados por FR-029–FR-031 y rechazar conversiones identidad.
 - [X] FIX012 Incorporar trabajos multi-input para imágenes→PDF y unión PDF preservando orden.
-- [ ] FIX013 Soportar WebP→PDF mediante rasterización local previa.
+- [X] FIX013 Soportar WebP→PDF mediante rasterización local previa.
 - [ ] FIX014 Validar opciones y formatos dentro de cada worker antes de procesar.
 
 ## Fase 4 — Fidelidad y errores documentales
