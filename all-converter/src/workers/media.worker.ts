@@ -1,7 +1,8 @@
 import { loadFfmpegAssets, preferredFfmpegMode, type FfmpegMode } from '../lib/ffmpeg'
+import type { WorkerRequest, WorkerResponse } from './types'
+import { resultTransferables } from './worker-utils'
 
-type Request = { kind: 'start'; jobId: string; input: ArrayBuffer; options: { operation: 'extract-mp3' | 'audio' | 'mp3-mp4'; inputName: string; outputName: string; outputFormat?: string; cover?: ArrayBuffer; generateWaveform?: boolean } } | { kind: 'cancel'; jobId: string }
-const send = (message: unknown, transfer?: Transferable[]) => self.postMessage(message, { transfer })
+const send = (message: WorkerResponse, transfer?: Transferable[]) => self.postMessage(message, { transfer })
 
 function outputMime(name: string): string {
   const extension = name.split('.').pop()?.toLowerCase()
@@ -15,11 +16,15 @@ async function loadEngine(mode: FfmpegMode) {
   return ffmpeg
 }
 
-self.onmessage = async ({ data }: MessageEvent<Request>) => {
+self.onmessage = async ({ data }: MessageEvent<WorkerRequest>) => {
   if (data.kind === 'cancel') { self.close(); return }
 
   let ffmpeg: Awaited<ReturnType<typeof loadEngine>> | undefined
   try {
+    const input = data.inputs[0]
+    if (!input) throw new Error('La conversión multimedia requiere un archivo de entrada.')
+    const outputName = data.options.outputName
+    if (typeof outputName !== 'string') throw new Error('Falta el nombre del archivo de salida.')
     let mode = preferredFfmpegMode()
     send({ kind: 'progress', jobId: data.jobId, progress: { stage: mode === 'multithread' ? 'Descargando motor multihilo' : 'Modo compatible, conversión más lenta' } })
     try {
@@ -33,22 +38,24 @@ self.onmessage = async ({ data }: MessageEvent<Request>) => {
 
     send({ kind: 'progress', jobId: data.jobId, progress: { percent: 0, stage: 'Convirtiendo' } })
     ffmpeg.on('progress', ({ progress }) => send({ kind: 'progress', jobId: data.jobId, progress: { percent: Math.round(progress * 100), stage: 'Convirtiendo' } }))
-    await ffmpeg.writeFile(data.options.inputName, new Uint8Array(data.input))
-    if (data.options.operation === 'extract-mp3') {
+    await ffmpeg.writeFile(input.name, new Uint8Array(input.buffer))
+    if (data.operation === 'extract-mp3') {
       try {
-        await ffmpeg.exec(['-i', data.options.inputName, '-map', '0:a:0', '-vn', '-q:a', '2', data.options.outputName])
+        await ffmpeg.exec(['-i', input.name, '-map', '0:a:0', '-vn', '-q:a', '2', outputName])
       } catch {
         throw new Error('El video no contiene pista de audio.')
       }
     }
-    else if (data.options.operation === 'mp3-mp4') {
-      if (data.options.cover) await ffmpeg.writeFile('cover.png', new Uint8Array(data.options.cover))
-      else if (data.options.generateWaveform) await ffmpeg.exec(['-i', data.options.inputName, '-filter_complex', 'aformat=channel_layouts=mono,showwavespic=s=1280x720:colors=0x22c55e', '-frames:v', '1', 'cover.png'])
+    else if (data.operation === 'mp3-mp4') {
+      const cover = data.inputs[1]
+      if (cover) await ffmpeg.writeFile('cover.png', new Uint8Array(cover.buffer))
+      else if (data.options.generateWaveform === true) await ffmpeg.exec(['-i', input.name, '-filter_complex', 'aformat=channel_layouts=mono,showwavespic=s=1280x720:colors=0x22c55e', '-frames:v', '1', 'cover.png'])
       else throw new Error('Elegí una portada o generá un waveform para crear el video.')
-      await ffmpeg.exec(['-loop', '1', '-framerate', '30', '-i', 'cover.png', '-i', data.options.inputName, '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'libx264', '-tune', 'stillimage', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-shortest', data.options.outputName])
-    } else await ffmpeg.exec(['-i', data.options.inputName, data.options.outputName])
-    const output = await ffmpeg.readFile(data.options.outputName) as Uint8Array
-    send({ kind: 'result', jobId: data.jobId, results: [{ name: data.options.outputName, mime: outputMime(data.options.outputName), buffer: output.buffer, sizeBytes: output.byteLength }] }, [output.buffer])
+      await ffmpeg.exec(['-loop', '1', '-framerate', '30', '-i', 'cover.png', '-i', input.name, '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'libx264', '-tune', 'stillimage', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-shortest', outputName])
+    } else await ffmpeg.exec(['-i', input.name, outputName])
+    const output = await ffmpeg.readFile(outputName) as Uint8Array
+    const results = [{ name: outputName, mime: outputMime(outputName), buffer: output.buffer as ArrayBuffer, sizeBytes: output.byteLength }]
+    send({ kind: 'result', jobId: data.jobId, results }, resultTransferables(results))
   } catch (error) {
     send({ kind: 'error', jobId: data.jobId, message: error instanceof Error ? error.message : 'Falló la conversión multimedia' })
   } finally {
