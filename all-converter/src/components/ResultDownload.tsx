@@ -1,1 +1,1 @@
-export function ResultDownload({ href, name }: { href: string; name: string }) { return <a href={href} download={name}>Descargar {name}</a> }
+export function ResultDownload({ href, name, preview }: { href: string; name: string; preview?: 'image' | 'pdf' }) { return <section>{preview === 'image' && <img src={href} alt={`Vista previa de ${name}`} />}{preview === 'pdf' && <iframe src={href} title={`Vista previa de ${name}`} />}<a href={href} download={name}>Descargar {name}</a></section> }

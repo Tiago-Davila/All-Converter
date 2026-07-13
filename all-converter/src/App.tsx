@@ -4,6 +4,7 @@ import { intakeFiles, type IncomingFile } from './lib/directory-input'
 import { Dropzone } from './components/Dropzone'
 import { FileQueue } from './components/FileQueue'
 import { PrivacyNotice } from './components/PrivacyNotice'
+import { NavigationGuard } from './components/NavigationGuard'
 
 export function App() {
   const [entries, setEntries] = useState<FileEntry[]>([])
@@ -13,5 +14,5 @@ export function App() {
     entriesRef.current = [...entriesRef.current, ...added]
     setEntries(entriesRef.current)
   }
-  return <main><h1>ConvertiTodo</h1><PrivacyNotice /><Dropzone onFiles={(files) => { void addFiles(files) }} /><FileQueue entries={entries} /></main>
+  return <main><NavigationGuard active={entries.some((entry) => entry.state === 'converting')} /><h1>ConvertiTodo</h1><PrivacyNotice /><Dropzone onFiles={(files) => { void addFiles(files) }} /><FileQueue entries={entries} /></main>
 }
