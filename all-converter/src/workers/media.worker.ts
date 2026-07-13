@@ -1,4 +1,6 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
+import coreURL from '@ffmpeg/core?url'
+import wasmURL from '@ffmpeg/core/wasm?url'
 
 type Request = { kind: 'start'; jobId: string; input: ArrayBuffer; options: { operation: 'extract-mp3' | 'audio' | 'mp3-mp4'; inputName: string; outputName: string; outputFormat?: string; cover?: ArrayBuffer } } | { kind: 'cancel'; jobId: string }
 const send = (message: unknown, _transfer?: Transferable[]) => self.postMessage(message)
@@ -9,7 +11,7 @@ self.onmessage = async ({ data }: MessageEvent<Request>) => {
     const multi = self.crossOriginIsolated && typeof SharedArrayBuffer !== 'undefined'
     send({ kind: 'progress', jobId: data.jobId, progress: { stage: multi ? 'Cargando motor multihilo' : 'Modo compatible, conversión más lenta' } })
     ffmpeg.on('progress', ({ progress }) => send({ kind: 'progress', jobId: data.jobId, progress: { percent: Math.round(progress * 100), stage: 'Convirtiendo' } }))
-    await ffmpeg.load({ coreURL: new URL('@ffmpeg/core/dist/esm/ffmpeg-core.js', import.meta.url).toString(), wasmURL: new URL('@ffmpeg/core/dist/esm/ffmpeg-core.wasm', import.meta.url).toString() })
+    await ffmpeg.load({ coreURL, wasmURL })
     await ffmpeg.writeFile(data.options.inputName, new Uint8Array(data.input))
     if (data.options.operation === 'extract-mp3') await ffmpeg.exec(['-i', data.options.inputName, '-vn', '-q:a', '2', data.options.outputName])
     else if (data.options.operation === 'mp3-mp4') { if (!data.options.cover) throw new Error('Se requiere portada o waveform'); await ffmpeg.writeFile('cover.png', new Uint8Array(data.options.cover)); await ffmpeg.exec(['-loop','1','-framerate','30','-i','cover.png','-i',data.options.inputName,'-map','0:v:0','-map','1:a:0','-c:v','libx264','-tune','stillimage','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-shortest',data.options.outputName]) }
