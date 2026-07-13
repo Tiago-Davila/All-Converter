@@ -22,6 +22,7 @@
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@vitejs/plugin-react": "latest",
     "browser-image-compression": "^2.0.2",
+    "cuelume": "^0.1.0",
     "docx": "^9.7.1",
     "file-type": "latest",
     "jspdf": "^4.2.1",
