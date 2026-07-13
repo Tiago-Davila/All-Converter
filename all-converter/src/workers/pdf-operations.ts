@@ -59,13 +59,13 @@ async function manipulate(operation: string, inputs: WorkerInput[], options: Wor
   throw new Error(`Operación PDF de escritura desconocida: ${operation}.`)
 }
 
-async function imagesPdf(input: WorkerInput, onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> { const { PDFDocument } = await import('pdf-lib'); const pdf = await PDFDocument.create(); const image = input.mime === 'image/png' ? await pdf.embedPng(input.buffer) : await pdf.embedJpg(input.buffer); const page = pdf.addPage([image.width, image.height]); page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height }); const result = await savePdf(pdf, `${baseName(input.name)}.pdf`); report(onProgress, 100, 'PDF creado'); return [result] }
+async function imagesPdf(inputs: WorkerInput[], onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> { const { PDFDocument } = await import('pdf-lib'); const pdf = await PDFDocument.create(); for (const [index, input] of inputs.entries()) { const image = input.mime === 'image/png' ? await pdf.embedPng(input.buffer) : await pdf.embedJpg(input.buffer); const page = pdf.addPage([image.width, image.height]); page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height }); report(onProgress, Math.round((index + 1) / inputs.length * 100), `Imagen ${index + 1} de ${inputs.length}`) } const result = await savePdf(pdf, `${baseName(inputs[0].name)}.pdf`); return [result] }
 
 export async function executePdfOperation(operation: string, inputs: WorkerInput[], options: WorkerOptions, onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> {
   const input = inputs[0]; if (!input) throw new Error('Falta el archivo de entrada.')
   if (operation === 'pdf-to-txt') return pdfText(input, onProgress)
   if (operation === 'pdf-to-images') return pdfImages(input, options, onProgress)
   if (operation === 'pdf-to-docx') return pdfDocx(input, onProgress)
-  if (operation === 'images-to-pdf') return imagesPdf(input, onProgress)
+  if (operation === 'images-to-pdf') return imagesPdf(inputs, onProgress)
   return manipulate(operation, inputs, options, onProgress)
 }

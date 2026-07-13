@@ -16,10 +16,13 @@ describe('PDF manipulation', () => {
   it('unir suma las páginas de todos los PDFs en orden', async () => {
     const main = await fixture('text.pdf')
     const extra = await fixture('scanned.pdf')
-    const expected = (await pageCount(await main.arrayBuffer())) + (await pageCount(await extra.arrayBuffer()))
-    const [result] = await pdfMergeConverter.convert(main, noop, { mergeWith: [extra] }, signal)
+    const mainPdf = await PDFDocument.load(await main.arrayBuffer())
+    const extraPdf = await PDFDocument.load(await extra.arrayBuffer())
+    const expectedSizes = [...mainPdf.getPages(), ...extraPdf.getPages()].map((page) => page.getSize())
+    const [result] = await pdfMergeConverter.convertMany!([main, extra], noop, {}, signal)
     expect(result.name).toBe('text-unido.pdf')
-    await expect(pageCount(result.buffer)).resolves.toBe(expected)
+    const merged = await PDFDocument.load(result.buffer)
+    expect(merged.getPages().map((page) => page.getSize())).toEqual(expectedSizes)
   })
 
   it('unir exige al menos dos archivos', async () => {

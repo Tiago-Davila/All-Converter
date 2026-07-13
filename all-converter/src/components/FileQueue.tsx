@@ -35,6 +35,18 @@ export function FileQueue({ entries }: { entries: readonly FileEntry[] }) {
     const options: Record<string, unknown> = selectedTarget ? { target: selectedTarget, mime: selectedTarget === 'jpg' ? 'image/jpeg' : `image/${selectedTarget}` } : {}
     if (converter.id === 'audio-convert') { options.format = selectedTarget; options.sourceExtension = ready[0].detectedType.extension }
     const collected: { result: ConversionResult; relativePath?: string }[] = []
+    if (converter.convertMany) {
+      const oversized = ready.find((entry) => exceedsFileLimit(entry.file, converter))
+      if (oversized) { updateItem(oversized.id, { state: 'error', error: fileLimitMessage(oversized.file, converter) }); setRunning(false); return }
+      ready.forEach((entry) => updateItem(entry.id, { state: 'converting', percent: 0 }))
+      try {
+        const results = await converter.convertMany(ready.map((entry) => entry.file), (progress) => ready.forEach((entry) => updateItem(entry.id, { percent: progress.percent })), options, controller.signal)
+        results.forEach((result) => collected.push({ result }))
+        ready.forEach((entry) => updateItem(entry.id, { state: 'completed', percent: 100 }))
+      } catch (thrown) {
+        ready.forEach((entry) => updateItem(entry.id, { state: thrown instanceof DOMException && thrown.name === 'AbortError' ? 'cancelled' : 'error', error: thrown instanceof Error ? thrown.message : 'Falló la conversión conjunta.' }))
+      }
+    } else {
     await runWithConcurrency(ready.map((entry) => async () => {
       if (controller.signal.aborted) { updateItem(entry.id, { state: 'cancelled' }); return }
       if (exceedsFileLimit(entry.file, converter)) { updateItem(entry.id, { state: 'error', error: fileLimitMessage(entry.file, converter) }); return }
@@ -47,7 +59,8 @@ export function FileQueue({ entries }: { entries: readonly FileEntry[] }) {
         if (thrown instanceof DOMException && thrown.name === 'AbortError') updateItem(entry.id, { state: 'cancelled' })
         else updateItem(entry.id, { state: 'error', error: thrown instanceof Error ? thrown.message : 'La conversión falló por un error inesperado.' })
       }
-    }), 2)
+    }), 2, controller.signal)
+    }
     if (collected.length) {
       const buffer = await createZip(collected.map(({ result, relativePath }) => ({ name: result.name, buffer: result.buffer, relativePath })), controller.signal)
       setZipUrl(URL.createObjectURL(new Blob([buffer], { type: 'application/zip' })))

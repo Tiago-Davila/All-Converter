@@ -33,3 +33,18 @@ export async function runPdf(file: File, operation: string, options: Record<stri
     : new Worker(new URL('../workers/pdf-read.worker.ts', import.meta.url), { type: 'module' })
   return startWorker(worker, request, signal, onProgress)
 }
+
+export async function runPdfFiles(files: readonly File[], operation: string, options: Record<string, unknown>, onProgress: (progress: ConversionProgress) => void, signal: AbortSignal): Promise<ConversionResult[]> {
+  if (signal.aborted) throw new DOMException('Cancelado', 'AbortError')
+  if (!files.length) throw new Error('La conversión requiere al menos un archivo.')
+  const inputs: WorkerInput[] = []
+  for (const file of files) inputs.push(await fileInput(file))
+  const workerOptions = sanitizeOptions(options)
+  if (import.meta.env.MODE === 'test') {
+    const { executePdfOperation } = await import('../workers/pdf-operations')
+    return executePdfOperation(operation, inputs, workerOptions, onProgress)
+  }
+  const request: WorkerStartRequest = { kind: 'start', jobId: crypto.randomUUID(), operation, inputs, options: workerOptions }
+  const worker = new Worker(new URL('../workers/pdf-write.worker.ts', import.meta.url), { type: 'module' })
+  return startWorker(worker, request, signal, onProgress)
+}
