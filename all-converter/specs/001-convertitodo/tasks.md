@@ -77,7 +77,7 @@ fixture real en `tests/fixtures/`.
 
 - [X] T031 [US4] Implementar lectura recursiva de carpetas, reglas de aceptación/rechazo y pruebas en `src/lib/directory-input.ts` y `tests/lib/directory-input.test.ts` (depende de T008–T010, T014).
 - [X] T032 [US4] Implementar ZIP con rutas relativas/colisiones y pruebas en `src/lib/zip.ts` y `tests/lib/zip.test.ts` (depende de T009).
-- [ ] T033 [US4] Integrar lote, scheduler, errores parciales y descarga ZIP en `src/components/FileQueue.tsx`, `src/App.tsx` y `tests/components/batch-flow.test.tsx` (depende de T017, T031–T032).
+- [X] T033 [US4] Integrar lote, scheduler, errores parciales y descarga ZIP en `src/components/FileQueue.tsx`, `src/App.tsx` y `tests/components/batch-flow.test.tsx` (depende de T017, T031–T032).
 - [X] T034 [P] [US4] Implementar DOCX→XLSX por tablas y fixture en `src/converters/docx-to-xlsx.ts`, `src/workers/office.worker.ts` y `tests/converters/docx-to-xlsx.test.ts` (depende de T022, T029).
 
 ## Phase 10: Audio/video — US5 (P5)
@@ -94,7 +94,7 @@ fixture real en `tests/fixtures/`.
 - [X] T039 Implementar PWA/offline solo para assets propios en `vite.config.ts`, `src/sw.ts` y `public/manifest.webmanifest` (depende de T018, T035).
 - [X] T040 [P] Implementar sección de privacidad y avisos de limitación/accesibilidad en `src/components/PrivacyNotice.tsx`, `src/App.tsx` y `src/index.css` (depende de T014).
 - [X] T041 Integrar previews, confirmación de recarga y validación manual de quickstart en `src/App.tsx`, `src/components/ResultDownload.tsx` y `tests/components/app-flow.test.tsx` (depende de T020–T040).
-- [ ] T042 Ejecutar y documentar validación final de build, tests, preview COOP/COEP, offline y red en `specs/001-convertitodo/quickstart.md` (depende de T039–T041, T043–T046).
+- [X] T042 Ejecutar y documentar validación final de build, tests, preview COOP/COEP, offline y red en `specs/001-convertitodo/quickstart.md` (depende de T039–T041, T043–T046).
 - [X] T043 [P] [US3] Añadir pruebas de PDF protegido, corrupto y escaneado para PDF→TXT y PDF→DOCX en `tests/converters/pdf-extract.test.ts`, `tests/converters/pdf-to-docx.test.ts` y `tests/fixtures/{protected.pdf,corrupt.pdf,scanned.pdf}` (depende de T026–T027).
 - [X] T044 Añadir pruebas y mensajes para 0 bytes, extensión engañosa, límite excedido, CSV ilegible, PNG/WebP animado, transparencia→JPG y memoria insuficiente en `tests/lib/file-type.test.ts`, `tests/lib/file-limits.test.ts`, `tests/converters/image.test.ts` y `tests/converters/spreadsheet.test.ts` (depende de T008–T009, T019, T023).
 - [X] T045 Integrar opciones/preview de imagen, avisos previos de limitaciones y confirmación de recarga/cierre en `src/components/ConversionCard.tsx`, `src/components/NavigationGuard.tsx`, `src/App.tsx` y `tests/components/app-flow.test.tsx` (depende de T020, T030, T037, T040).

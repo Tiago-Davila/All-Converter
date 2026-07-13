@@ -43,3 +43,15 @@ en móvil para conversiones livianas y en desktop para media. Confirmar tres acc
 o menos para el flujo simple (agregar, convertir, descargar), respuesta de UI menor a
 100 ms y que, con Network offline tras la primera carga, una conversión de imagen ya
 usada continúa funcionando.
+
+## Puertas automatizadas finales — 2026-07-13
+
+- `npm run lint`: aprobado sin errores.
+- `npm run test:coverage`: 113 pruebas aprobadas; 85,27% líneas, 79,79% statements,
+  85,04% funciones y 65,77% branches.
+- `npm run test:e2e`: 13 escenarios Chromium aprobados con conversiones reales de
+  imagen y media, aislamiento, red exclusivamente local y repetición offline.
+- `npm run test:budget`: entry de 66.740 bytes gzip, debajo del límite de 200 KB.
+- `npm run test:workers`: seis workers pesados con implementación real comprobada.
+- `npm run test:offline`: ambos cores ffmpeg fuera del precache inicial y cacheados
+  localmente bajo demanda.

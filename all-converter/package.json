@@ -9,7 +9,12 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:offline": "node scripts/verify-offline.mjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:coverage": "vitest run --coverage",
+    "test:workers": "node scripts/check-worker-stubs.mjs",
+    "test:budget": "node scripts/check-bundle-budget.mjs",
+    "lint": "eslint .",
+    "ci": "npm run lint && npm run test:coverage && npm run build && npm run test:budget && npm run test:workers && npm run test:offline && npm run test:e2e"
   },
   "dependencies": {
     "@ffmpeg/core": "^0.12.10",
@@ -39,8 +44,11 @@
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^10.7.0",
     "jsdom": "^29.1.1",
     "tailwindcss": "latest",
+    "typescript-eslint": "^8.63.0",
     "vite-plugin-pwa": "^1.3.0",
     "vitest": "latest"
   }
