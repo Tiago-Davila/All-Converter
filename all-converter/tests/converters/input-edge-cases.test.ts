@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isAnimatedRaster } from '../../src/converters/image'
+import { isAnimatedRaster } from '../../src/lib/image-format'
 import { spreadsheetConverter } from '../../src/converters/spreadsheet'
 
 describe('casos borde de conversión', () => {
