@@ -84,14 +84,14 @@ fixture real en `tests/fixtures/`.
 
 **Prueba independiente**: fixtures MP4/MP3 convierten, y sin SAB se muestra modo compatible sin bloquear desktop.
 
-- [ ] T035 [US5] Configurar carga diferida de cores ffmpeg locales, selección MT/ST, indicador de descarga separado del progreso de conversión y tests de capability/progreso en `src/lib/ffmpeg.ts`, `src/workers/media.worker.ts` y `tests/lib/ffmpeg.test.ts` (depende de T004, T016–T018).
+- [X] T035 [US5] Configurar carga diferida de cores ffmpeg locales, selección MT/ST, indicador de descarga separado del progreso de conversión y tests de capability/progreso en `src/lib/ffmpeg.ts`, `src/workers/media.worker.ts` y `tests/lib/ffmpeg.test.ts` (depende de T004, T016–T018).
 - [ ] T036 [US5] Implementar MP4→MP3 y fixture de vídeo con/sin audio en `src/converters/mp4-to-mp3.ts`, `src/workers/media.worker.ts` y `tests/converters/mp4-to-mp3.test.ts` (depende de T035).
 - [ ] T037 [US5] Implementar MP3→MP4 con portada/waveform y fixture en `src/converters/mp3-to-mp4.ts`, `src/workers/media.worker.ts` y `tests/converters/mp3-to-mp4.test.ts` (depende de T035).
 - [ ] T038 [P] [US5] Implementar conversiones MP3↔WAV/OGG/M4A y fixture en `src/converters/audio.ts`, `src/workers/media.worker.ts` y `tests/converters/audio.test.ts` (depende de T035).
 
 ## Phase 11: Pulido y validación transversal — US6 (P6)
 
-- [ ] T039 Implementar PWA/offline solo para assets propios en `vite.config.ts`, `src/sw.ts` y `public/manifest.webmanifest` (depende de T018, T035).
+- [X] T039 Implementar PWA/offline solo para assets propios en `vite.config.ts`, `src/sw.ts` y `public/manifest.webmanifest` (depende de T018, T035).
 - [X] T040 [P] Implementar sección de privacidad y avisos de limitación/accesibilidad en `src/components/PrivacyNotice.tsx`, `src/App.tsx` y `src/index.css` (depende de T014).
 - [X] T041 Integrar previews, confirmación de recarga y validación manual de quickstart en `src/App.tsx`, `src/components/ResultDownload.tsx` y `tests/components/app-flow.test.tsx` (depende de T020–T040).
 - [ ] T042 Ejecutar y documentar validación final de build, tests, preview COOP/COEP, offline y red en `specs/001-convertitodo/quickstart.md` (depende de T039–T041, T043–T046).

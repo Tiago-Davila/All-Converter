@@ -33,6 +33,11 @@ single-thread con el aviso definido.
 
 ## Revisión manual pendiente de navegador
 
+La validación automatizada de offline se ejecuta después de `npm run build` con
+`npm run test:offline`. Comprueba que ninguno de los dos cores ffmpeg ni los workers
+pesados estén en el precache inicial, y que el service worker los conserve con
+`CacheFirst` después de su primer uso.
+
 Antes de publicar, repetir los escenarios en Chrome, Firefox, Edge y Safari actuales,
 en móvil para conversiones livianas y en desktop para media. Confirmar tres acciones
 o menos para el flujo simple (agregar, convertir, descargar), respuesta de UI menor a
