@@ -1,6 +1,7 @@
 import type { ConversionProgress, ConversionResult } from './types'
 import { startWorker } from '../workers/client'
 import type { WorkerInput, WorkerOptions, WorkerStartRequest } from '../workers/types'
+import { runMediaExclusive } from '../lib/media-pool'
 
 function optionString(options: Record<string, unknown>, key: string): string {
   const value = options[key]
@@ -14,7 +15,8 @@ export async function runMedia(
   onProgress: (value: ConversionProgress) => void,
   signal: AbortSignal,
 ): Promise<ConversionResult[]> {
-  if (signal.aborted) throw new DOMException('Cancelado', 'AbortError')
+  return runMediaExclusive(async () => {
+    if (signal.aborted) throw new DOMException('Cancelado', 'AbortError')
 
   let input: ArrayBuffer
   try {
@@ -40,5 +42,6 @@ export async function runMedia(
     options: workerOptions,
   }
   const worker = new Worker(new URL('../workers/media.worker.ts', import.meta.url), { type: 'module' })
-  return startWorker(worker, request, signal, onProgress)
+    return startWorker(worker, request, signal, onProgress)
+  }, signal)
 }

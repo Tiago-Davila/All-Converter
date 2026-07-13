@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import type { ConversionResult, FileEntry } from '../converters/types'
 import { getAvailableConverters, getConverterTargets } from '../converters/registry'
 import { exceedsFileLimit, fileLimitMessage } from '../lib/file-limits'
-import { runWithConcurrency } from '../lib/job-scheduler'
+import { concurrencyForConverter, runWithConcurrency } from '../lib/job-scheduler'
 import { createZip } from '../lib/zip'
 import { ConversionCard } from './ConversionCard'
 import { ProgressBar } from './ProgressBar'
@@ -59,7 +59,7 @@ export function FileQueue({ entries }: { entries: readonly FileEntry[] }) {
         if (thrown instanceof DOMException && thrown.name === 'AbortError') updateItem(entry.id, { state: 'cancelled' })
         else updateItem(entry.id, { state: 'error', error: thrown instanceof Error ? thrown.message : 'La conversión falló por un error inesperado.' })
       }
-    }), 2, controller.signal)
+    }), concurrencyForConverter(converter), controller.signal)
     }
     if (collected.length) {
       const buffer = await createZip(collected.map(({ result, relativePath }) => ({ name: result.name, buffer: result.buffer, relativePath })), controller.signal)

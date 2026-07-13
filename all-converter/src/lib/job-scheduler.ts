@@ -1,3 +1,9 @@
+import type { Converter } from '../converters/types'
+
+export function concurrencyForConverter(converter: Pick<Converter, 'from'>): number {
+  return converter.from.some((source) => source.kind === 'audio' || source.kind === 'video') ? 1 : 2
+}
+
 function abortReason(): DOMException {
   return new DOMException('Cancelado', 'AbortError')
 }

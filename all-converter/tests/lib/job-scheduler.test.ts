@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { runWithConcurrency } from '../../src/lib/job-scheduler'
+import { concurrencyForConverter, runWithConcurrency } from '../../src/lib/job-scheduler'
+import { AUDIO_SOURCE, IMAGE_SOURCE } from '../../src/converters/sources'
 
 describe('scheduler', () => {
   it('preserva el orden de entrada aunque los trabajos terminen desordenados', async () => {
@@ -53,5 +54,10 @@ describe('scheduler', () => {
 
   it('rechaza límites inválidos', async () => {
     await expect(runWithConcurrency([], 0)).rejects.toThrow(RangeError)
+  })
+
+  it('asigna concurrencia 1 a media y 2 a conversiones livianas', () => {
+    expect(concurrencyForConverter({ from: [AUDIO_SOURCE] })).toBe(1)
+    expect(concurrencyForConverter({ from: [IMAGE_SOURCE] })).toBe(2)
   })
 })
