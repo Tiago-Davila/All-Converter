@@ -48,13 +48,13 @@ Las Fases 1–4 y 7–8 **no dependen de nada** y son el camino crítico.
 
 **Objetivo**: los cimientos que todo lo demás usa. Sin esto, ningún componente puede cumplir AA.
 
-- [ ] T001 Crear el árbol `src/ui/` (`background/`, `sound/`, `prefs/`, `a11y/`, `components/tiles/`) y su espejo en `tests/ui/`, con la regla de frontera documentada: nada en `src/ui/` importa de `src/converters/` salvo `registry.ts` y `types.ts`, y ningún módulo de 001 importa de `src/ui/`.
-- [ ] T002 Definir los tokens de color como fuente de verdad en `src/ui/a11y/tokens.ts`, exportando `TOKENS`, `SURFACE = '#161521'` y el tipo `ColorToken` según `data-model.md` (depende de T001).
-- [ ] T003 Implementar el cálculo de contraste WCAG 2.1 (luminancia relativa) en `src/ui/a11y/contrast.ts` con pruebas de casos conocidos en `tests/ui/a11y/contrast.test.ts` (depende de T001).
-- [ ] T004 **Puerta de accesibilidad**: test que itera todos los `TOKENS` contra `SURFACE` y **falla el build** si alguno baja de 4.5 (o de 3.0 en `focus-ring`), en `tests/ui/a11y/tokens.test.ts`. Agregar un token que no cumple debe romper la suite (depende de T002–T003).
-- [ ] T005 Implementar el scrim y los estilos base del tema oscuro (superficie α ≥ 0.85 sobre el fondo, radios, tipografías self-hosteadas ya presentes en `public/fonts/`) en `src/index.css` y `src/ui/a11y/surface.css`, sin ningún `@import` remoto (depende de T002).
-- [ ] T006 Implementar el foco visible global (anillo con `focus-ring`, contraste ≥ 3.0, nunca `outline: none` sin reemplazo) en `src/index.css`, con prueba de que ningún control queda sin indicador de foco en `tests/ui/a11y/focus.test.tsx` (depende de T002, T005).
-- [ ] T007 Implementar la matriz de capacidades y degradación (`Capabilities`, `DegradationPlan`, `planFor`) en `src/ui/a11y/capabilities.ts`, con pruebas de las 5 filas de la matriz (research §D6) en `tests/ui/a11y/capabilities.test.ts` (depende de T001).
+- [X] T001 Crear el árbol `src/ui/` (`background/`, `sound/`, `prefs/`, `a11y/`, `components/tiles/`) y su espejo en `tests/ui/`, con la regla de frontera documentada: nada en `src/ui/` importa de `src/converters/` salvo `registry.ts` y `types.ts`, y ningún módulo de 001 importa de `src/ui/`.
+- [X] T002 Definir los tokens de color como fuente de verdad en `src/ui/a11y/tokens.ts`, exportando `TOKENS`, `SURFACE = '#161521'` y el tipo `ColorToken` según `data-model.md` (depende de T001).
+- [X] T003 Implementar el cálculo de contraste WCAG 2.1 (luminancia relativa) en `src/ui/a11y/contrast.ts` con pruebas de casos conocidos en `tests/ui/a11y/contrast.test.ts` (depende de T001).
+- [X] T004 **Puerta de accesibilidad**: test que itera todos los `TOKENS` contra `SURFACE` y **falla el build** si alguno baja de 4.5 (o de 3.0 en `focus-ring`), en `tests/ui/a11y/tokens.test.ts`. Agregar un token que no cumple debe romper la suite (depende de T002–T003).
+- [X] T005 Implementar el scrim y los estilos base del tema oscuro (superficie α ≥ 0.85 sobre el fondo, radios, tipografías self-hosteadas ya presentes en `public/fonts/`) en `src/index.css` y `src/ui/a11y/surface.css`, sin ningún `@import` remoto (depende de T002).
+- [X] T006 Implementar el foco visible global (anillo con `focus-ring`, contraste ≥ 3.0, nunca `outline: none` sin reemplazo) en `src/index.css`, con prueba de que ningún control queda sin indicador de foco en `tests/ui/a11y/focus.test.tsx` (depende de T002, T005).
+- [X] T007 Implementar la matriz de capacidades y degradación (`Capabilities`, `DegradationPlan`, `planFor`) en `src/ui/a11y/capabilities.ts`, con pruebas de las 5 filas de la matriz (research §D6) en `tests/ui/a11y/capabilities.test.ts` (depende de T001).
 
 **Checkpoint**: el contraste es una puerta automatizada y la degradación tiene un único dueño.
 
