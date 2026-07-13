@@ -1,5 +1,6 @@
 import type { ConversionResult } from '../converters/types'
 import { isAnimatedRaster } from '../lib/image-format'
+import { imageErrorMessage } from '../lib/image-errors'
 import type { WorkerRequest, WorkerResponse } from './types'
 import { resultTransferables } from './worker-utils'
 import { validateImageRequest } from './validation'
@@ -50,10 +51,7 @@ self.onmessage = async ({ data }: MessageEvent<WorkerRequest>) => {
     send({ kind: 'progress', jobId: data.jobId, progress: { percent: 100, stage: 'Completado' } })
     send({ kind: 'result', jobId: data.jobId, results }, resultTransferables(results))
   } catch (error) {
-    const message = error instanceof RangeError || error instanceof DOMException && error.name === 'QuotaExceededError'
-      ? 'El navegador no tiene memoria suficiente. Probá con un archivo más chico.'
-      : error instanceof Error ? error.message : 'No se pudo convertir la imagen.'
-    send({ kind: 'error', jobId: data.jobId, message })
+    send({ kind: 'error', jobId: data.jobId, message: imageErrorMessage(error) })
   } finally {
     bitmap?.close()
   }

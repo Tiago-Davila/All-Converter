@@ -45,7 +45,7 @@ fixture real en `tests/fixtures/`.
 
 **Prueba independiente**: PNG fixture→JPG/WebP válido; calidad y dimensiones respetadas; archivos inválidos se rechazan.
 
-- [ ] T019 [P] [US1] Implementar PNG/JPG/WebP con Canvas/compresión, worker y fixture en `src/converters/image.ts`, `src/workers/image.worker.ts` y `tests/converters/image.test.ts` (depende de T010, T016–T018).
+- [X] T019 [P] [US1] Implementar PNG/JPG/WebP con Canvas/compresión, worker y fixture en `src/converters/image.ts`, `src/workers/image.worker.ts` y `tests/converters/image.test.ts` (depende de T010, T016–T018).
 - [X] T020 [US1] Registrar exclusivamente las conversiones de imagen en `src/converters/registry.ts` (depende de T019).
 - [X] T021 [US1] Implementar imágenes→PDF con orden y fixture en `src/converters/images-to-pdf.ts`, `src/workers/pdf-write.worker.ts` y `tests/converters/images-to-pdf.test.ts` (depende de T019).
 
@@ -96,7 +96,7 @@ fixture real en `tests/fixtures/`.
 - [X] T041 Integrar previews, confirmación de recarga y validación manual de quickstart en `src/App.tsx`, `src/components/ResultDownload.tsx` y `tests/components/app-flow.test.tsx` (depende de T020–T040).
 - [ ] T042 Ejecutar y documentar validación final de build, tests, preview COOP/COEP, offline y red en `specs/001-convertitodo/quickstart.md` (depende de T039–T041, T043–T046).
 - [X] T043 [P] [US3] Añadir pruebas de PDF protegido, corrupto y escaneado para PDF→TXT y PDF→DOCX en `tests/converters/pdf-extract.test.ts`, `tests/converters/pdf-to-docx.test.ts` y `tests/fixtures/{protected.pdf,corrupt.pdf,scanned.pdf}` (depende de T026–T027).
-- [ ] T044 Añadir pruebas y mensajes para 0 bytes, extensión engañosa, límite excedido, CSV ilegible, PNG/WebP animado, transparencia→JPG y memoria insuficiente en `tests/lib/file-type.test.ts`, `tests/lib/file-limits.test.ts`, `tests/converters/image.test.ts` y `tests/converters/spreadsheet.test.ts` (depende de T008–T009, T019, T023).
+- [X] T044 Añadir pruebas y mensajes para 0 bytes, extensión engañosa, límite excedido, CSV ilegible, PNG/WebP animado, transparencia→JPG y memoria insuficiente en `tests/lib/file-type.test.ts`, `tests/lib/file-limits.test.ts`, `tests/converters/image.test.ts` y `tests/converters/spreadsheet.test.ts` (depende de T008–T009, T019, T023).
 - [X] T045 Integrar opciones/preview de imagen, avisos previos de limitaciones y confirmación de recarga/cierre en `src/components/ConversionCard.tsx`, `src/components/NavigationGuard.tsx`, `src/App.tsx` y `tests/components/app-flow.test.tsx` (depende de T020, T030, T037, T040).
 - [X] T046 Ampliar la validación manual de compatibilidad, móvil, máximo de tres acciones y respuesta UI <100 ms en `specs/001-convertitodo/quickstart.md` (depende de T041, T045).
 
