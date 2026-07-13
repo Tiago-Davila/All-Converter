@@ -6,6 +6,7 @@
  * data-model.md §Selector de destino (por archivo).
  */
 import React from 'react'
+import { play } from 'cuelume'
 import type { FileEntry } from '../../converters/types'
 import { getAvailableConverters, getConverterTargets } from '../../converters/registry'
 
@@ -42,7 +43,7 @@ export function FormatSelect({
       aria-label={`Formato destino para ${entry.name}`}
       value={value ?? ''}
       onChange={(e) => {
-        if (e.target.value) onChange(e.target.value)
+        if (e.target.value) { play('toggle'); onChange(e.target.value) }
       }}
       disabled={disabled}
       data-testid="format-select"

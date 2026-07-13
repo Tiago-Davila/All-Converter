@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { play } from 'cuelume'
 import type { ConversionResult, Converter, FileEntry } from '../converters/types'
 import { getAvailableConverters, getConverterTargets } from '../converters/registry'
 import { exceedsFileLimit, fileLimitMessage } from '../lib/file-limits'
@@ -78,8 +79,10 @@ export function FileQueue({ entries }: { entries: readonly FileEntry[] }) {
         const results = await choice.converter.convertMany!(grouped.map((entry) => entry.file), (progress) => grouped.forEach((entry) => updateItem(entry.id, { percent: progress.percent })), optionsFor(choice, grouped[0]), controller.signal)
         results.forEach((result) => collected.push({ result }))
         grouped.forEach((entry) => updateItem(entry.id, { state: 'completed', percent: 100 }))
+        if (convertible.length === 1) play('success')
       } catch (thrown) {
         grouped.forEach((entry) => updateItem(entry.id, { state: thrown instanceof DOMException && thrown.name === 'AbortError' ? 'cancelled' : 'error', error: thrown instanceof Error ? thrown.message : 'Falló la conversión conjunta.' }))
+        if (convertible.length === 1) play('bloom')
       }
     }
 
@@ -93,15 +96,19 @@ export function FileQueue({ entries }: { entries: readonly FileEntry[] }) {
         const results = await choice.converter.convert(entry.file, (progress) => updateItem(entry.id, { percent: progress.percent }), optionsFor(choice, entry), controller.signal)
         results.forEach((result) => collected.push({ result, relativePath: entry.relativePath }))
         updateItem(entry.id, { state: 'completed', percent: 100 })
+        if (convertible.length === 1) play('success')
       } catch (thrown) {
         if (thrown instanceof DOMException && thrown.name === 'AbortError') updateItem(entry.id, { state: 'cancelled' })
-        else updateItem(entry.id, { state: 'error', error: thrown instanceof Error ? thrown.message : 'La conversión falló por un error inesperado.' })
+        else { updateItem(entry.id, { state: 'error', error: thrown instanceof Error ? thrown.message : 'La conversión falló por un error inesperado.' }); if (convertible.length === 1) play('bloom') }
       }
     }), singles.length ? concurrency : 2, controller.signal)
 
     if (collected.length) {
       const buffer = await createZip(collected.map(({ result, relativePath }) => ({ name: result.name, buffer: result.buffer, relativePath })), controller.signal)
       setZipUrl(URL.createObjectURL(new Blob([buffer], { type: 'application/zip' })))
+      if (convertible.length > 1) play('success')
+    } else if (convertible.length > 1) {
+      play('bloom')
     }
     setRunning(false)
   }
