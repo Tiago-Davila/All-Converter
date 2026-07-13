@@ -34,6 +34,8 @@ tamaño" significa: **lo que el registry de 001 declare en ese momento**.
 - Q: Si el usuario activó el sonido pero `prefers-reduced-motion` está activo, ¿suena? → A: **No suena**: la preferencia del sistema vetea. El control muestra el efecto real (silenciado) junto con el motivo, y la preferencia del usuario queda guardada para cuando desactive reduce-motion.
 - Q: ¿Cuándo se ofrece "reintentar" en un error? → A: Solo ante errores **transitorios** (memoria insuficiente, fallo del motor, cancelación previa). Nunca ante errores **determinísticos** (archivo corrupto, formato no soportado, excede tamaño, PDF escaneado sin texto), donde reintentar daría el mismo resultado.
 - Q: ¿Qué pasa si un sonido se dispara mientras otro suena? → A: Se **descarta** el nuevo (no se encola, no se mezcla). Evita audio que suena después de que el evento ya pasó.
+- Q: ¿"No soportados" es un grupo de la cola o una lista de rechazos? → A: Una **vista agrupada de los rechazos** (`state: 'rejected'` de 001), no un grupo convertible. No tiene selector, no convierte, no cuenta para el tope de 10, y no dispara sonidos de éxito. Reconcilia 002 con el modelo de 001 sin cambiar ninguno de los dos.
+- Q: MP3→MP4, ¿el usuario debe elegir portada o waveform? → A: **No**. El waveform es el **default** y la conversión nunca se bloquea. Esto **enmienda 001 FR-030**, que exigía la elección (hallazgo C1 de `/speckit-analyze`). Ejecutado el 2026-07-13; queda pendiente la tarea de código T052 en 001.
 - Q: ¿El formato destino se elige por grupo o por archivo? → A: **Por archivo**. Cada fila tiene su propio selector, con los destinos válidos para su tipo detectado. Esto enmienda FR-011 (que decía "selector único para todo el grupo") y quedó reflejado en 001 §FR-023b. **DEP-003 quedó ejecutada**: 001 fue enmendada el 2026-07-13.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -303,8 +305,13 @@ reduce-motion la app funciona idéntica pero muda.
 - **FR-011b** *(nuevo 2026-07-13)*: Las filas sin formato destino elegido MUST señalarse de
   forma visible y no-cromática, y MUST NOT bloquear la conversión del resto de la cola
   (001 §FR-023c).
-- **FR-012**: El grupo "No soportados" MUST NOT ofrecer selector de formato ni acción de
-  convertir.
+- **FR-012** *(aclarado 2026-07-13)*: El grupo "No soportados" **no es un grupo de la cola**:
+  es una **vista agrupada de los archivos rechazados**. 001 marca esas entradas con estado
+  `rejected` y nunca entran a la cola convertible; 002 simplemente las **agrupa visualmente**
+  en lugar de listarlas sueltas. En consecuencia, el grupo MUST NOT ofrecer selector de
+  formato ni acción de convertir, MUST NOT contar para el tope de 10 archivos convertibles, y
+  MUST NOT disparar sonidos de éxito (FR-036). Cada entrada muestra su motivo de rechazo
+  concreto y la acción "Quitar".
 - **FR-013**: La barra de descarga en ZIP MUST ser visible cuando haya 2 o más archivos listos.
 - **FR-014**: Los formatos destino ofrecidos en cada grupo MUST derivarse del registry de
   conversiones de 001; la capa de experiencia MUST NOT duplicar ni redefinir la matriz de

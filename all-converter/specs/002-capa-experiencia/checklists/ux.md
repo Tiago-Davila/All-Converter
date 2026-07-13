@@ -18,7 +18,7 @@ pruebas: cada ítem interroga lo que la spec **dice o deja de decir**, no si el 
 - [x] CHK003 ¿Está definido qué pasa con una carpeta de tipos mezclados? **Resuelto**: los archivos se reparten en los grupos de su categoría respetando el tope de 10, ya no se rechazan por diferir del primero. [Conflict → Resolved, Spec §Edge Cases]
 - [x] CHK004 **Resuelto en specs (2026-07-13)**: 001 fue enmendada (FR-023 admite formatos mezclados; FR-023b/c definen destino por archivo; data-model y US4 actualizados). **El código y los tests siguen pendientes**: tareas T047–T051 de `specs/001-convertitodo/tasks.md`, a ejecutar con `/speckit-implement`. [Conflict → Resolved en spec, código pendiente]
 - [x] CHK005 (No aplica: ganó el modelo de 002, no el de 001. FR-010..FR-013 se conservan y se ampliaron con FR-010b.) [Resolved]
-- [ ] CHK006 ¿El grupo "No soportados" es compatible con 001, que trata los no soportados como **rechazados** (no como un grupo de la cola)? ¿Es un grupo persistente de la cola o una lista de rechazos? Sigue sin definirse. [Ambiguity, Spec §FR-012 ↔ 001 §FR-005]
+- [x] CHK006 **Resuelto (2026-07-13, hallazgo A1)**: "No soportados" es una **vista agrupada de los rechazos** (`state: 'rejected'` de 001), no un grupo convertible. Sin selector, sin convertir, no cuenta para el tope de 10, no dispara sonidos de éxito. FR-012 aclarado; T020 lo testea. [Ambiguity → Resolved, Spec §FR-012]
 
 ## Completitud: los cinco estados de archivo
 

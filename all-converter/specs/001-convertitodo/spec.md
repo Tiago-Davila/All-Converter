@@ -187,7 +187,8 @@ respectivos.
 
 Una persona quiere extraer el audio de un video MP4 como MP3, convertir entre formatos
 de audio (WAV, OGG, M4A, MP3), o convertir un MP3 en un video MP4 para plataformas que
-solo aceptan video, usando una imagen de portada propia o un waveform generado.
+solo aceptan video, con un waveform generado por defecto (o una imagen de portada propia,
+si prefiere aportarla).
 
 **Why this priority**: es la categoría de mayor peso técnico (motor de conversión de
 ~30MB que se descarga la primera vez) y la de menor frecuencia de uso relativa; se
@@ -203,9 +204,11 @@ reproduce el mismo audio.
    (~30MB) con progreso, antes de comenzar la conversión propiamente dicha.
 2. **Given** un MP4 con pista de audio, **When** el usuario elige MP3, **Then** el MP3
    descargado contiene el audio del video.
-3. **Given** un MP3 en la cola, **When** el usuario elige MP4, **Then** la app le pide
-   elegir entre subir una imagen de portada o generar un waveform, y el MP4 resultante
-   reproduce el audio con ese contenido visual.
+3. **Given** un MP3 en la cola, **When** el usuario elige MP4, **Then** la app usa por
+   defecto un waveform generado, la acción de convertir queda **habilitada de inmediato**,
+   y el MP4 resultante reproduce el audio con ese contenido visual.
+3b. **Given** un MP3 con destino MP4, **When** el usuario aporta una imagen de portada,
+   **Then** esa imagen reemplaza al waveform, y el usuario puede volver al waveform.
 4. **Given** archivos WAV, OGG o M4A, **When** el usuario elige MP3 (o la conversión
    inversa desde MP3), **Then** el archivo descargado reproduce el mismo audio en el
    formato elegido.
@@ -395,8 +398,12 @@ visible sin scroll en la pantalla inicial.
 
 - **FR-029**: El sistema MUST convertir MP4 a MP3 extrayendo la pista de audio, y
   MUST fallar con mensaje específico si el video no tiene pista de audio.
-- **FR-030**: El sistema MUST convertir MP3 a MP4, requiriendo que el usuario elija
-  entre subir una imagen de portada o generar una visualización de onda (waveform).
+- **FR-030** *(enmendado 2026-07-13)*: El sistema MUST convertir MP3 a MP4 generando
+  **por defecto** una visualización de onda (waveform), de modo que la conversión siempre
+  tenga un resultado válido **sin intervención del usuario**. El usuario MUST poder
+  reemplazar ese waveform por una imagen de portada propia, y volver al waveform. La
+  conversión MP3→MP4 MUST NOT bloquear la acción de convertir en ningún momento: nunca
+  existe un estado de "falta un insumo".
 - **FR-031**: El sistema MUST convertir WAV, OGG y M4A a MP3, y MP3 a WAV, OGG y M4A.
 - **FR-032**: La primera vez que se use una conversión de audio/video, el sistema MUST
   mostrar un indicador con progreso de la descarga del motor de conversión (~30MB),
@@ -576,3 +583,24 @@ levanta.
 - `tests/lib/directory-input.test.ts`: el test que hoy afirma que los tipos mezclados se
   rechazan debe invertirse: ahora deben aceptarse.
 - `tests/components/batch-flow.test.tsx`: cubrir un lote mixto con destinos distintos.
+
+### 2026-07-13 — MP3→MP4: waveform por defecto (FR-030)
+
+**Motivo**: la feature 002 estableció (clarificación del 2026-07-13) que MP3→MP4 genera un
+waveform automáticamente y **nunca bloquea** la acción de convertir. El FR-030 original exigía
+que el usuario **eligiera** entre portada o waveform, lo que implicaba un estado bloqueante de
+"falta un insumo". Contradicción detectada por `/speckit-analyze` (hallazgo C1).
+
+**Cambios**:
+
+- **FR-030**: el waveform pasa a ser el **default**; la imagen de portada es opcional y
+  reemplazable. La conversión nunca se bloquea.
+- **User Story 5** y su escenario 3: reescritos; se agrega el escenario 3b (reemplazar el
+  waveform por una imagen y volver atrás).
+
+**Impacto en código** (tarea T052, a ejecutar en la fase de implementación):
+
+- `src/converters/mp3-to-mp4.ts`: el texto de `limitation` todavía dice *"Elegí una portada
+  propia o generá un waveform local"*, que sigue sugiriendo una elección obligatoria. Debe
+  reflejar el nuevo default. Además, `generateWaveform` hoy es `options.generateWaveform === true`
+  (default `false`); la UI debe pasar `true` por defecto, o el conversor debe invertir el default.
