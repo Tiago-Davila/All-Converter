@@ -1,7 +1,7 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 
 type Request = { kind: 'start'; jobId: string; input: ArrayBuffer; options: { operation: 'extract-mp3' | 'audio' | 'mp3-mp4'; inputName: string; outputName: string; outputFormat?: string; cover?: ArrayBuffer } } | { kind: 'cancel'; jobId: string }
-const send = (message: unknown, transfer?: Transferable[]) => self.postMessage(message, transfer ?? [])
+const send = (message: unknown, transfer?: Transferable[]) => (self as unknown as DedicatedWorkerGlobalScope).postMessage(message, transfer ?? [])
 self.onmessage = async ({ data }: MessageEvent<Request>) => {
   if (data.kind === 'cancel') { self.close(); return }
   const ffmpeg = new FFmpeg()
