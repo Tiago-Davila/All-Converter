@@ -1,4 +1,5 @@
 import type { WorkerRequest, WorkerResponse } from './types'
+import { requestTransferables } from './worker-utils'
 
 export function startWorker(worker: Worker, request: Extract<WorkerRequest, { kind: 'start' }>, signal: AbortSignal): Promise<WorkerResponse> {
   return new Promise((resolve, reject) => {
@@ -6,6 +7,6 @@ export function startWorker(worker: Worker, request: Extract<WorkerRequest, { ki
     signal.addEventListener('abort', stop, { once: true })
     worker.onmessage = ({ data }: MessageEvent<WorkerResponse>) => { if (data.jobId === request.jobId && data.kind !== 'progress') { signal.removeEventListener('abort', stop); worker.terminate(); resolve(data) } }
     worker.onerror = () => reject(new Error('Error del worker'))
-    worker.postMessage(request, [request.input])
+    worker.postMessage(request, requestTransferables(request))
   })
 }
