@@ -7,6 +7,7 @@ import { ConversionCard } from '../../src/components/ConversionCard'
 const { convert } = vi.hoisted(() => ({ convert: vi.fn(async (_file: File, _progress: unknown, _options: Record<string, unknown>) => [{ name: 'foto.jpg', mime: 'image/jpeg', buffer: new Uint8Array([1, 2]).buffer, sizeBytes: 2, previewKind: 'image' as const }]) }))
 vi.mock('../../src/converters/registry', () => ({
   getAvailableConverters: () => [{ id: 'image-convert', label: 'Convertir imagen', from: ['image'], to: 'png|jpg|webp', maxSizeMB: 50, convert }],
+  getConverterTargets: (converter: { to: string }) => converter.to.split('|'),
 }))
 
 URL.createObjectURL = vi.fn(() => 'blob:preview')

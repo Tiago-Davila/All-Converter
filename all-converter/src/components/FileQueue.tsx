@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import type { ConversionResult, FileEntry } from '../converters/types'
-import { getAvailableConverters } from '../converters/registry'
+import { getAvailableConverters, getConverterTargets } from '../converters/registry'
 import { exceedsFileLimit, fileLimitMessage } from '../lib/file-limits'
 import { runWithConcurrency } from '../lib/job-scheduler'
 import { createZip } from '../lib/zip'
@@ -20,7 +20,7 @@ export function FileQueue({ entries }: { entries: readonly FileEntry[] }) {
   const abortRef = useRef<AbortController | null>(null)
 
   const converter = available.find((candidate) => candidate.id === converterId) ?? available[0]
-  const targets = converter ? converter.to.split('|') : []
+  const targets = converter ? getConverterTargets(converter, ready[0].detectedType) : []
   const selectedTarget = target && targets.includes(target) ? target : targets[0]
 
   const updateItem = (id: string, patch: Partial<BatchItem>) => setItems((current) => ({ ...current, [id]: { ...current[id], ...patch } as BatchItem }))
@@ -32,7 +32,8 @@ export function FileQueue({ entries }: { entries: readonly FileEntry[] }) {
     setRunning(true)
     setZipUrl((previous) => { if (previous) URL.revokeObjectURL(previous); return undefined })
     setItems(Object.fromEntries(ready.map((entry) => [entry.id, { state: 'queued' } satisfies BatchItem])))
-    const options = selectedTarget ? { target: selectedTarget, mime: selectedTarget === 'jpg' ? 'image/jpeg' : `image/${selectedTarget}` } : {}
+    const options: Record<string, unknown> = selectedTarget ? { target: selectedTarget, mime: selectedTarget === 'jpg' ? 'image/jpeg' : `image/${selectedTarget}` } : {}
+    if (converter.id === 'audio-convert') { options.format = selectedTarget; options.sourceExtension = ready[0].detectedType.extension }
     const collected: { result: ConversionResult; relativePath?: string }[] = []
     await runWithConcurrency(ready.map((entry) => async () => {
       if (controller.signal.aborted) { updateItem(entry.id, { state: 'cancelled' }); return }

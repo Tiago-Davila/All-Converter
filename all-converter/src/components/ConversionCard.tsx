@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ConversionProgress, FileEntry, QueueState } from '../converters/types'
-import { getAvailableConverters } from '../converters/registry'
+import { getAvailableConverters, getConverterTargets } from '../converters/registry'
 import { exceedsFileLimit, fileLimitMessage } from '../lib/file-limits'
 import { ProgressBar } from './ProgressBar'
 import { ResultDownload } from './ResultDownload'
@@ -26,7 +26,7 @@ export function ConversionCard({ entry }: { entry: FileEntry }) {
   const abortRef = useRef<AbortController | null>(null)
 
   const converter = available.find((candidate) => candidate.id === converterId)
-  const targets = converter ? converter.to.split('|') : []
+  const targets = converter ? getConverterTargets(converter, entry.detectedType) : []
   const selectedTarget = target && targets.includes(target) ? target : targets[0]
   const mediaBlocked = Boolean(converter?.from.some((source) => source.kind === 'audio' || source.kind === 'video') && isMobileDevice())
 
@@ -45,7 +45,7 @@ export function ConversionCard({ entry }: { entry: FileEntry }) {
         options.mime = selectedTarget === 'jpg' ? 'image/jpeg' : `image/${selectedTarget}`
         options.quality = quality / 100
         if (maxWidth) options.maxWidth = maxWidth
-      } else if (converter.id === 'audio-convert') options.format = selectedTarget
+      } else if (converter.id === 'audio-convert') { options.format = selectedTarget; options.sourceExtension = entry.detectedType.extension }
       else if (converter.id === 'mp3-to-mp4') {
         options.generateWaveform = visual === 'waveform'
         if (cover) options.cover = await cover.arrayBuffer()

@@ -12,7 +12,7 @@ vi.mock('../../src/converters/registry', () => {
       return [{ name: file.name.replace(/\.png$/, '.jpg'), mime: 'image/jpeg', buffer: new TextEncoder().encode('jpg').buffer, sizeBytes: 3 }]
     },
   }
-  return { converters: [fake], getAvailableConverters: () => [fake] }
+  return { converters: [fake], getAvailableConverters: () => [fake], getConverterTargets: (converter: { to: string }) => converter.to.split('|') }
 })
 
 URL.createObjectURL = vi.fn(() => 'blob:zip')

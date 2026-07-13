@@ -18,3 +18,7 @@ export const converters: readonly Converter[] = [imageConverter, imagesToPdfConv
 export function getAvailableConverters(type: DetectedFileType, entries: readonly Converter[] = converters): readonly Converter[] {
   return entries.filter((converter) => converter.from.some((source) => source.kind === type.kind && (source.mimes.includes(type.mime) || source.extensions.includes(type.extension))))
 }
+
+export function getConverterTargets(converter: Converter, type: DetectedFileType): readonly string[] {
+  return converter.targetsFor?.(type) ?? converter.to.split('|')
+}
