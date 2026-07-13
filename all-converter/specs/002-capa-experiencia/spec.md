@@ -23,6 +23,14 @@ tamaño" significa: **lo que el registry de 001 declare en ese momento**.
 ### Session 2026-07-13
 
 - Q: MP3→MP4, ¿imagen obligatoria o waveform automático? ¿Qué bloquea? → A: Waveform generado automáticamente por defecto; el usuario puede reemplazarlo por una imagen. Nunca bloquea "Convertir": siempre hay un resultado válido.
+
+### Session 2026-07-14
+
+- Q: ¿Los eventos sonoros obligatorios son 3 (con `fin-de-cola` como 1 evento de 2 variantes) o 4 eventos distintos? → A: **4 eventos distintos**: `drop`, `reject`, `queue-done-ok` y `queue-done-errors`. Corrige la inconsistencia entre Key Entities ("exactamente tres") y DEP-002 ("al menos 4 sonidos"). Los nombres canónicos en inglés son los del data-model.
+- Q: ¿Cómo mapea el estado interno `cancelled` de 001 al modelo visual de 002? → A: `cancelled` → estado visual `error` **transitorio** (causa: "cancelado por vos"), con acción "Reintentar" disponible. Explicitado en FR-015.
+- Q: ¿Cuándo se considera que "la cola terminó" a efectos del sonido de fin de cola, si el usuario agrega archivos durante una conversión? → A: Cuando no queda ningún archivo en `converting` ni `prep`, incluyendo los recién agregados. No hay concepto de "lote original" separado. Explicitado en FR-029(c).
+- Q: ¿Qué clase de error produce un fallo de carga del motor durante el estado `prep`? → A: `error` **transitorio** — reintentable, causa "no se pudo cargar el conversor". Explicitado en FR-020.
+- Q: ¿Los primeros fotogramas del arranque del shader se incluyen en la medición de FPS para degradación? → A: No — se descartan los primeros **~500 ms** desde el inicio del shader (período de calentamiento). Explicitado en FR-004(d).
 - Q: ¿Qué umbral concreto degrada el fondo animado a estático? → A: Degrada si no hay WebGL, O si `prefers-reduced-motion` está activo, O si el promedio de FPS cae por debajo de 30 durante ~2 segundos seguidos. Una vez degradado, no reintenta en esa sesión (evita parpadeo).
 - Q: ¿Qué granularidad tienen los anuncios `aria-live`? → A: Consolidados por lote, siempre, para éxitos y errores ("7 archivos listos, 3 con error"). Nunca uno por archivo. La causa concreta de cada error queda disponible al enfocar la fila.
 - Q: ¿Cómo se consolidan los sonidos cuando un lote termina de golpe? → A: No hay sonido de éxito por archivo. Suena un único sonido cuando la cola entera termina (no queda nada convirtiendo), distinto según si todo salió bien o si hubo errores.
@@ -274,7 +282,8 @@ reduce-motion la app funciona idéntica pero muda.
   sin error visible y sin pérdida de funcionalidad, cuando se cumpla **cualquiera** de estas
   condiciones: (a) no hay WebGL disponible, (b) el contexto WebGL se pierde en caliente,
   (c) `prefers-reduced-motion: reduce` está activo, o (d) el promedio de FPS de la animación
-  cae por debajo de **30 durante 2 segundos seguidos**.
+  cae por debajo de **30 durante 2 segundos seguidos**, excluyendo los primeros **~500 ms**
+  desde el inicio del shader (período de calentamiento que no refleja el rendimiento en régimen).
 - **FR-004b**: Una vez degradado el fondo por bajo rendimiento, el sistema MUST NOT reintentar
   la animación durante esa sesión, para evitar el parpadeo de entrar y salir del modo animado.
 - **FR-005**: El fondo animado MUST detenerse cuando la pestaña no está visible, y MUST
@@ -321,7 +330,9 @@ reduce-motion la app funciona idéntica pero muda.
 
 - **FR-015**: El sistema MUST representar los cinco estados (`pending`, `converting`, `done`,
   `error`, `prep`) con **color + ícono/forma + texto**, de modo que cada estado sea
-  distinguible sin percibir el color.
+  distinguible sin percibir el color. El estado interno `cancelled` de 001 MUST mapearse al
+  estado visual `error` con clase **transitoria** (causa: "cancelado por vos") y ofrecer la
+  acción "Reintentar", ya que la cancelación es reversible.
 - **FR-016**: El estado `pending` MUST ofrecer la acción "Quitar".
 - **FR-017**: El estado `converting` MUST mostrar un porcentaje real y una barra
   determinística, y ofrecer la acción "Cancelar".
@@ -338,7 +349,8 @@ reduce-motion la app funciona idéntica pero muda.
   Ofrecer un reintento condenado al mismo error violaría la honestidad de la interfaz.
 - **FR-020**: El estado `prep` (motor cargando) MUST ser visualmente distinto de `converting`,
   mostrar el texto "esperando al conversor…" y su propio indicador, y MUST NOT mostrar un
-  porcentaje de progreso falso.
+  porcentaje de progreso falso. Si el motor falla al cargar, el archivo MUST transicionar a
+  `error` con clase **transitoria** (reintentable), con causa "no se pudo cargar el conversor".
 
 **Estados de borde**
 
@@ -381,14 +393,17 @@ reduce-motion la app funciona idéntica pero muda.
 
 - **FR-029**: Con el sonido habilitado, el sistema MUST reproducir un sonido distinto y
   reconocible para exactamente estos tres momentos, y ninguno más entre los obligatorios:
-  - **(a) Drop**: un sonido por **gesto de soltar**, no por archivo. Soltar 10 archivos suena
+  - **(a) Drop** → evento `drop`: un sonido por **gesto de soltar**, no por archivo. Soltar 10 archivos suena
     una vez.
-  - **(b) Rechazo al agregar**: si el gesto de soltar produjo archivos rechazados (no
+  - **(b) Rechazo al agregar** → evento `reject`: si el gesto de soltar produjo archivos rechazados (no
     soportados, vacíos, o que exceden el tamaño), suena **un** sonido de error por gesto,
     independientemente de cuántos archivos se rechazaron.
-  - **(c) Fin de cola**: un único sonido cuando la cola **termina por completo** (no queda
-    ningún archivo en `converting` ni en `prep`), con dos variantes distinguibles: "terminó
-    todo bien" y "terminó con errores".
+  - **(c) Fin de cola** → eventos `queue-done-ok` / `queue-done-errors`: un único sonido cuando
+    la cola **termina por completo**, definido como el instante en que no queda ningún archivo
+    en `converting` ni en `prep`, **incluyendo cualquier archivo agregado durante el proceso**.
+    Si el usuario agrega archivos mientras otros convierten, el evento no se dispara hasta que
+    **todos** terminen. Dos variantes: `queue-done-ok` (todo bien) y `queue-done-errors`
+    (≥1 error).
 
   Los assets concretos los aporta el propietario (ver DEP-002); esta spec fija los eventos, no
   los archivos.
@@ -468,10 +483,10 @@ reduce-motion la app funciona idéntica pero muda.
   estado del sonido (activado/silenciado) como su único contenido. No contiene datos de
   archivos. Ante un valor ausente o corrupto, se cae al default (silenciado).
 - **Evento sonoro**: un nombre semántico al que la capa de sonido asocia un asset. Los
-  obligatorios son exactamente tres: `drop` (por gesto), `rechazo` (por gesto), y
-  `fin-de-cola` con dos variantes (`todo-ok` y `con-errores`). Los opcionales: hover en el
-  dropzone, descarga y zip. Todo evento tiene un equivalente visual obligatorio, y **no existe
-  ningún evento sonoro por archivo individual**.
+  obligatorios son exactamente **cuatro**: `drop` (por gesto), `reject` (por gesto),
+  `queue-done-ok` (cola terminada sin errores) y `queue-done-errors` (cola terminada con
+  ≥1 error). Los opcionales: hover en el dropzone, descarga y zip. Todo evento tiene un
+  equivalente visual obligatorio, y **no existe ningún evento sonoro por archivo individual**.
 - **Estado visual de archivo**: la representación de los cinco estados de 001 como una terna
   (color, ícono/forma, texto) más el conjunto de acciones disponibles.
 - **Grupo de la cola**: una categoría (imagen, documento, video, audio, no soportados) con su
@@ -566,10 +581,10 @@ historias que dependen de ellos; el resto de la feature puede avanzar sin ellos.
 
 - **DEP-002 — Assets de audio** (bloquea FR-029/FR-037, y por lo tanto la Historia 4): el
   propietario aportará los archivos de sonido y los versionará localmente en el repositorio.
-  Esta spec define únicamente los **eventos semánticos** (los tres obligatorios: `drop`,
-  `rechazo`, `fin-de-cola` en sus variantes `todo-ok` y `con-errores`; más los opcionales hover
-  / descarga / zip); el mapeo evento → archivo se resuelve cuando los assets existan. Se
-  necesitan por lo tanto **al menos 4 sonidos distinguibles**. Requisitos que deben cumplir:
+  Esta spec define únicamente los **eventos semánticos** (los cuatro obligatorios: `drop`,
+  `reject`, `queue-done-ok` y `queue-done-errors`; más los opcionales hover / descarga / zip);
+  el mapeo evento → archivo se resuelve cuando los assets existan. Se necesitan por lo tanto
+  **exactamente 4 sonidos distinguibles** para los obligatorios. Requisitos que deben cumplir:
   cortos, volumen moderado, licencia apta para publicar el proyecto, y servidos localmente sin
   CDN en runtime (Principio XVI).
 

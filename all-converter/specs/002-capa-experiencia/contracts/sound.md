@@ -23,6 +23,10 @@ Web Audio ni los assets.
    petición (FR-037, Principio XVI).
 10. **Cancelar no es un logro**: si la cola termina porque el usuario canceló todo, no suena
     `queue-done-ok`.
+11. **Cola dinámica**: agregar archivos mientras otros están en `converting` o `prep` pospone el
+    disparo de `queue-done-ok`/`queue-done-errors` hasta que **todos** los archivos de la cola
+    —incluidos los recién agregados— finalicen. El evento no se dispara en mitad de una
+    conversión activa (FR-029c).
 
 ## Superficie
 
@@ -47,3 +51,4 @@ silenceReason(): SilenceReason | undefined
 | Sin Web Audio → no-op, sin throw | Invariante 8 |
 | `silenceReason()` distingue los 4 motivos | FR-034b |
 | Cola cancelada → sin sonido de éxito | Invariante 10 |
+| Agregar archivos mid-conversión → fin de cola espera a todos | Invariante 11 |

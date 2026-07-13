@@ -17,8 +17,10 @@ El enfoque técnico se apoya en tres decisiones verificadas en [research.md](./r
    (scrim) con opacidad ≥ 0.85, lo que vuelve el contraste **determinista e independiente del
    fotograma**. Sin esto, el requisito "AA en el peor fotograma" (FR-007/SC-002) es imposible
    de garantizar y de testear.
-2. **El sonido se reduce a tres eventos obligatorios** (drop, rechazo, fin-de-cola), sin sonido
-   por archivo. Esto elimina por construcción la avalancha de audio en lotes.
+2. **El sonido se reduce a cuatro eventos obligatorios** (`drop`, `reject`, `queue-done-ok`,
+   `queue-done-errors`), sin sonido por archivo. Esto elimina por construcción la avalancha de
+   audio en lotes. `queue-done-ok` y `queue-done-errors` son eventos distintos (no una variante
+   de un único evento), alineado con `data-model.md` y la clarificación del 2026-07-14.
 3. **La degradación es una matriz explícita** (WebGL × Web Audio × reduce-motion), no una serie
    de `if` dispersos: un único módulo de capacidades decide, y los componentes solo leen.
 
@@ -65,7 +67,7 @@ peticiones de red en runtime: fuentes, audio y shaders locales (Principios II y 
 | VII — TypeScript estricto | Todos los tipos nuevos en `data-model.md`, sin `any` | ✅ |
 | VIII — Sin test no hay merge | Tests por módulo definidos abajo; contraste y no-solo-color automatizados | ✅ |
 | XII — Accesibilidad | Scrim que garantiza AA; los 5 estados con ícono+texto; foco visible | ✅ |
-| XIII — Sonido complementario | 3 eventos, todos con equivalente visual; silencio por defecto; veto de reduce-motion | ✅ |
+| XIII — Sonido complementario | 4 eventos (`drop`, `reject`, `queue-done-ok`, `queue-done-errors`), todos con equivalente visual; silencio por defecto; veto de reduce-motion | ✅ |
 | XIV — Rendimiento percibido | Pausa con `document.hidden`; degrada bajo 30 fps; scrim mantiene el texto legible | ✅ |
 | XV — Honestidad de la interfaz | Tiles de borde que avisan **antes** de convertir; OCR visible pero inerte | ✅ |
 | XVI — Sin telemetría | Audio y shader locales; test de "cero red en runtime" | ✅ |
