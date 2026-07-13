@@ -43,4 +43,13 @@
   implementación: la spec no prescribe librerías ni frameworks.
 - Los términos `pending` / `converting` / `done` / `error` / `prep` se conservan en inglés
   porque son el vocabulario de estados que 001 ya estableció.
+- **Sesión de clarificación 2026-07-13**: 7 decisiones registradas en `## Clarifications`
+  (4 consultadas al propietario, 3 resueltas por default documentado). Se eliminaron las
+  contradicciones que dejaron: el bloqueo de "Convertir" en MP3→MP4, el sonido de éxito por
+  archivo, y los anuncios `aria-live` por archivo ya no existen en la spec.
+- Dos decisiones nombran mecanismos concretos (`localStorage` en FR-032, umbral de 30 FPS en
+  FR-004). Se mantienen en la spec, y no se consideran fuga de implementación, porque son
+  **restricciones verificables**: la primera es un requisito de privacidad (Principio II: la
+  preferencia no puede salir del navegador) y la segunda convierte el adjetivo vago "equipo
+  lento" en un criterio testeable, que es justamente lo que el checklist exige.
 - Items marcados incompletos requieren actualizar la spec antes de `/speckit-plan`.

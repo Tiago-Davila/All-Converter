@@ -18,6 +18,24 @@ matriz, no reimplementa conversores, no cambia el comportamiento funcional.
 Toda regla que aquí se enuncia sobre "qué formatos se ofrecen" o "cuál es el límite de
 tamaño" significa: **lo que el registry de 001 declare en ese momento**.
 
+## Clarifications
+
+### Session 2026-07-13
+
+- Q: MP3→MP4, ¿imagen obligatoria o waveform automático? ¿Qué bloquea? → A: Waveform generado automáticamente por defecto; el usuario puede reemplazarlo por una imagen. Nunca bloquea "Convertir": siempre hay un resultado válido.
+- Q: ¿Qué umbral concreto degrada el fondo animado a estático? → A: Degrada si no hay WebGL, O si `prefers-reduced-motion` está activo, O si el promedio de FPS cae por debajo de 30 durante ~2 segundos seguidos. Una vez degradado, no reintenta en esa sesión (evita parpadeo).
+- Q: ¿Qué granularidad tienen los anuncios `aria-live`? → A: Consolidados por lote, siempre, para éxitos y errores ("7 archivos listos, 3 con error"). Nunca uno por archivo. La causa concreta de cada error queda disponible al enfocar la fila.
+- Q: ¿Cómo se consolidan los sonidos cuando un lote termina de golpe? → A: No hay sonido de éxito por archivo. Suena un único sonido cuando la cola entera termina (no queda nada convirtiendo), distinto según si todo salió bien o si hubo errores.
+- Q: ¿El sonido arranca silenciado o respeta la preferencia del sistema? → A: Siempre silenciado por defecto (no existe una media query estándar de "menos sonido" en navegadores). `prefers-reduced-motion` actúa como veto: silencia aunque el usuario haya activado el sonido.
+- Q: ¿Qué mecanismo de persistencia y qué se guarda? → A: `localStorage`, una única clave con un objeto de preferencias de interfaz. Solo el estado del sonido. Nunca datos de archivos, nombres ni contenidos.
+- Q: ¿El OCR deshabilitado es visible-pero-inerte o está ausente? → A: Visible pero inerte, rotulado con el texto exacto "OCR (próximamente)", con `aria-disabled` y sin acción al activarlo.
+- Q: Conflicto de alcance con 001: ¿la cola admite lotes heterogéneos (grupos simultáneos de distintas categorías) o sigue siendo mono-formato? → A: Gana el modelo de 002: la cola admite formatos de origen mezclados, agrupados por categoría. Esto **requiere enmendar 001** (ver DEP-003), que hoy declara los lotes heterogéneos fuera de alcance.
+- Q: Al levantar la restricción mono-formato, ¿qué tope protege la memoria del navegador? → A: Se conserva el tope de **10 archivos en total** en la cola, ahora de formatos mezclados. Los límites de tamaño por archivo de 001 siguen vigentes.
+- Q: Si el usuario activó el sonido pero `prefers-reduced-motion` está activo, ¿suena? → A: **No suena**: la preferencia del sistema vetea. El control muestra el efecto real (silenciado) junto con el motivo, y la preferencia del usuario queda guardada para cuando desactive reduce-motion.
+- Q: ¿Cuándo se ofrece "reintentar" en un error? → A: Solo ante errores **transitorios** (memoria insuficiente, fallo del motor, cancelación previa). Nunca ante errores **determinísticos** (archivo corrupto, formato no soportado, excede tamaño, PDF escaneado sin texto), donde reintentar daría el mismo resultado.
+- Q: ¿Qué pasa si un sonido se dispara mientras otro suena? → A: Se **descarta** el nuevo (no se encola, no se mezcla). Evita audio que suena después de que el evento ya pasó.
+- Q: ¿El formato destino se elige por grupo o por archivo? → A: **Por archivo**. Cada fila tiene su propio selector, con los destinos válidos para su tipo detectado. Esto enmienda FR-011 (que decía "selector único para todo el grupo") y quedó reflejado en 001 §FR-023b. **DEP-003 quedó ejecutada**: 001 fue enmendada el 2026-07-13.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Los estados se entienden sin depender del color (Priority: P1)
@@ -58,8 +76,11 @@ y que cada uno expone su acción correcta.
    **Then** cada uno es identificable sin ambigüedad por su ícono y su texto.
 7. **Given** una conversión en curso, **When** el usuario navega solo con Tab, **Then**
    alcanza el control "Cancelar" de esa fila con foco visible.
-8. **Given** un archivo que pasa a `done` o a `error`, **When** ocurre el cambio, **Then** se
-   emite un anuncio para lectores de pantalla con el resultado.
+8. **Given** un lote que termina, **When** todos los archivos alcanzaron `done` o `error`,
+   **Then** se emite **un** anuncio consolidado para lectores de pantalla ("7 archivos listos,
+   3 con error"), y no uno por archivo.
+9. **Given** una fila en estado `error`, **When** recibe el foco, **Then** el lector de
+   pantalla lee la causa concreta de ese fallo.
 
 ---
 
@@ -91,16 +112,18 @@ convertirlo.
    "No soportados" con un mensaje que enumera qué formatos sí se aceptan, y la acción
    "Quitar".
 4. **Given** un PDF escaneado sin capa de texto, **When** se elige destino DOCX o TXT,
-   **Then** se avisa que no se puede extraer texto, y la acción de OCR aparece
-   **deshabilitada** y rotulada "próximamente", nunca como acción activa.
+   **Then** se avisa que no se puede extraer texto, y aparece el control **"OCR
+   (próximamente)"**, visible pero inerte: no ejecuta nada al activarlo y se anuncia como
+   deshabilitado a los lectores de pantalla.
 5. **Given** un video sin pista de audio, **When** se elige destino MP3, **Then** se avisa
    que no hay audio que extraer y se ofrece como alternativa convertir el video a otro
    formato de video.
 6. **Given** un grupo de documentos con una conversión DOCX↔PDF elegida, **When** se observa
    el grupo antes de convertir, **Then** muestra el aviso de fidelidad parcial ("el formato
    puede variar levemente").
-7. **Given** un grupo con conversión MP3→MP4 elegida, **When** no se resolvió la imagen de
-   portada, **Then** el botón "Convertir" está bloqueado y el grupo indica qué falta.
+7. **Given** un grupo con conversión MP3→MP4 elegida, **When** el usuario no eligió ninguna
+   imagen, **Then** el grupo muestra que se usará un waveform generado automáticamente, ofrece
+   reemplazarlo por una imagen propia, y el botón "Convertir" permanece **habilitado**.
 
 ---
 
@@ -156,10 +179,10 @@ algo.
 hace mal (ruidoso, invasivo). Depende además de que los equivalentes visuales de las historias
 1 y 2 ya existan, porque el sonido solo puede ser *redundante* respecto de algo que ya se ve.
 
-**Independent Test**: con el sonido activado, disparar los tres eventos principales y verificar
-que suenan distinto, que cada uno tiene equivalente visual, que un lote que termina de golpe
-produce **un** sonido y no N, y que con el sonido silenciado o bajo reduce-motion la app
-funciona idéntica pero muda.
+**Independent Test**: con el sonido activado, disparar los tres momentos sonoros (drop, rechazo
+al agregar, fin de cola) y verificar que suenan distinto, que cada uno tiene equivalente visual,
+que una cola llena (10 archivos) produce **un** sonido y no 10, y que con el sonido silenciado o bajo
+reduce-motion la app funciona idéntica pero muda.
 
 **Acceptance Scenarios**:
 
@@ -167,20 +190,32 @@ funciona idéntica pero muda.
    opera, **Then** no se reproduce ningún sonido (silencio por defecto).
 2. **Given** el control de sonido visible, **When** el usuario lo activa, **Then** los eventos
    posteriores suenan, y la preferencia sobrevive a recargar la página.
-3. **Given** el sonido activado, **When** se sueltan archivos, se completa una conversión y
-   ocurre un error, **Then** cada evento reproduce un sonido distinto y reconocible.
-4. **Given** el sonido activado y un lote de 20 archivos que termina casi simultáneamente,
-   **When** finalizan, **Then** se reproduce **un solo** sonido de "lote listo", no veinte
-   solapados.
-5. **Given** `prefers-reduced-motion: reduce`, **When** ocurren eventos sonoros, **Then** no
+3. **Given** el sonido activado, **When** se sueltan archivos, se rechaza un archivo al
+   agregarlo y termina la cola, **Then** cada uno de esos tres momentos reproduce un sonido
+   distinto y reconocible.
+4. **Given** el sonido activado y una cola de 10 archivos, **When** los archivos van
+   terminando uno a uno, **Then** **no** suena nada por archivo; suena **un solo** sonido
+   cuando la cola entera termina.
+5. **Given** una cola que terminó con al menos un error, **When** finaliza, **Then** el sonido
+   de fin de cola es la variante "terminó con errores", distinguible de la de éxito total.
+6. **Given** el sonido activado, **When** se sueltan 10 archivos de una vez, **Then** el sonido
+   de drop suena **una** vez (es por gesto, no por archivo).
+7. **Given** el sonido activado y `prefers-reduced-motion` activo, **When** el usuario observa
+   el control de sonido, **Then** este muestra "silenciado" con el motivo visible, y la
+   preferencia guardada permanece intacta.
+8. **Given** `prefers-reduced-motion: reduce`, **When** ocurren eventos sonoros, **Then** no
    suena nada, aunque la preferencia de sonido esté activada.
-6. **Given** un navegador sin Web Audio, o con el audio bloqueado hasta la primera
+9. **Given** un navegador sin Web Audio, o con el audio bloqueado hasta la primera
    interacción, **When** el usuario opera, **Then** la app funciona muda y sin errores; el
    primer gesto del usuario habilita el audio si la preferencia lo permitía.
-7. **Given** el grupo "No soportados", **When** se opera sobre él, **Then** no dispara ningún
-   sonido de éxito.
-8. **Given** cualquier evento sonoro, **When** se reproduce, **Then** existe un cambio visual
-   simultáneo que transmite la misma información.
+10. **Given** el grupo "No soportados", **When** se opera sobre él, **Then** no dispara ningún
+    sonido de éxito.
+11. **Given** cualquier evento sonoro, **When** se reproduce, **Then** existe un cambio visual
+    simultáneo que transmite la misma información.
+12. **Given** una preferencia de sonido corrupta o ilegible en el almacenamiento local,
+    **When** carga la app, **Then** cae al valor por defecto (silenciado) sin mostrar error.
+13. **Given** un sonido reproduciéndose, **When** se dispara otro evento sonoro, **Then** el
+    nuevo se descarta: nunca se solapan ni se suman.
 
 ---
 
@@ -188,22 +223,33 @@ funciona idéntica pero muda.
 
 - **Sin WebGL / contexto perdido**: fondo estático equivalente, cero errores visibles, cero
   pérdida de funcionalidad. La pérdida de contexto en caliente degrada, no rompe.
-- **Equipo lento**: si la animación no sostiene una tasa de refresco aceptable, se simplifica
-  o se congela, en vez de robarle fluidez a la app.
+- **Equipo lento**: si el promedio de FPS cae por debajo de 30 durante 2 segundos seguidos, el
+  fondo se congela a estático y no se reintenta la animación en esa sesión (evita el parpadeo
+  de entrar y salir del modo animado).
 - **Sin Web Audio / audio bloqueado por política del navegador**: la app funciona muda; el
   primer gesto del usuario habilita el audio si la preferencia estaba activada. Nunca se
   muestra un error por no poder sonar.
 - **`prefers-reduced-motion` activo**: fondo casi estático o desactivado **y** sin sonidos,
   aunque el sonido esté habilitado.
-- **Lote que termina de golpe**: los sonidos no se apilan; se consolidan en un único sonido de
-  "lote listo". En general, los sonidos no se pisan de forma molesta.
+- **Lote que termina de golpe**: no existe sonido de éxito por archivo, así que no hay
+  avalancha posible. Suena un único sonido cuando la cola entera termina, en su variante
+  "todo bien" o "con errores". Dos sonidos nunca se solapan a volumen sumado.
+- **Cola que nunca termina (todo cancelado)**: si el usuario cancela todo y no queda nada
+  convirtiendo, el fin de cola no dispara el sonido de éxito; la cancelación no es un logro.
+- **Preferencia corrupta en el almacenamiento local**: se cae al valor por defecto (silenciado)
+  sin error visible.
 - **Grupo "No soportados"**: no ofrece selector de formato, no ofrece convertir, no dispara
   sonidos de éxito.
 - **Foco de teclado durante conversión**: la fila en `converting` y su acción "Cancelar" son
   alcanzables por Tab con foco visible; los cambios de estado no roban el foco ni lo dejan
   huérfano cuando una fila desaparece.
-- **Cola muy larga**: sigue siendo navegable y legible con muchos archivos, y los anuncios de
-  lector de pantalla no se vuelven un torrente (se consolidan por lote).
+- **Cola llena**: al soltar más archivos de los que caben (tope de 10 en total), los excedentes
+  se rechazan ANTES de agregarse, con un mensaje que dice cuántos entraron y cuál es el tope.
+  Los que sí entraron quedan en la cola: soltar de más no cancela la operación entera.
+- **Carpeta con tipos mezclados**: los archivos se reparten en los grupos de su categoría (ya no
+  se rechazan por diferir del formato del primero, ver DEP-003), respetando el tope de 10.
+- **Error determinístico vs transitorio**: un archivo corrupto o de formato no soportado ofrece
+  solo "Quitar"; uno que falló por memoria o por el motor ofrece además "Reintentar".
 - **Descarga repetida**: un archivo ya descargado sigue siendo descargable; la marca de
   ya-descargado es informativa, no un bloqueo.
 
@@ -222,11 +268,15 @@ funciona idéntica pero muda.
   progreso o a la actividad).
 - **FR-003**: El punto de foco del brillo del fondo MUST seguir al cursor mientras este se
   mueve sobre el área principal.
-- **FR-004**: Si la aceleración por hardware para el fondo animado no está disponible, o se
-  pierde en caliente, la app MUST mostrar un fondo estático equivalente sin error visible y
-  sin pérdida de funcionalidad.
-- **FR-005**: El fondo animado MUST detenerse cuando la pestaña no está visible, y MUST quedar
-  casi estático o desactivado bajo `prefers-reduced-motion: reduce`.
+- **FR-004**: La app MUST degradar el fondo a estático (gradiente o color sólido equivalente),
+  sin error visible y sin pérdida de funcionalidad, cuando se cumpla **cualquiera** de estas
+  condiciones: (a) no hay WebGL disponible, (b) el contexto WebGL se pierde en caliente,
+  (c) `prefers-reduced-motion: reduce` está activo, o (d) el promedio de FPS de la animación
+  cae por debajo de **30 durante 2 segundos seguidos**.
+- **FR-004b**: Una vez degradado el fondo por bajo rendimiento, el sistema MUST NOT reintentar
+  la animación durante esa sesión, para evitar el parpadeo de entrar y salir del modo animado.
+- **FR-005**: El fondo animado MUST detenerse cuando la pestaña no está visible, y MUST
+  reanudarse al volver (salvo que ya se haya degradado por FR-004).
 - **FR-006**: El fondo MUST NOT bloquear ni degradar la interacción; la app MUST permanecer
   fluida durante las conversiones.
 - **FR-007**: Todo texto y control MUST permanecer legible por encima del fondo en cualquier
@@ -238,10 +288,21 @@ funciona idéntica pero muda.
   visible ("Tus archivos nunca salen del navegador").
 - **FR-009**: La zona de carga (dropzone) MUST ser el elemento protagonista cuando la cola
   está vacía, y MUST colapsar a una tira fina cuando hay archivos.
-- **FR-010**: La cola MUST agrupar los archivos por categoría (imagen, documento, video,
-  audio, no soportados), respetando el origen por carpeta cuando el usuario cargó carpetas.
-- **FR-011**: Cada grupo MUST mostrar su nombre, la cantidad de archivos, un selector de
-  formato destino **único para todo el grupo**, y las filas de sus archivos.
+- **FR-010**: La cola MUST admitir archivos de **formatos de origen mezclados** y agruparlos por
+  categoría (imagen, documento, video, audio, no soportados), respetando el origen por carpeta
+  cuando el usuario cargó carpetas. Un archivo MUST NOT rechazarse por diferir del formato de
+  otro archivo de la cola. (Esto amplía el alcance de 001; ver DEP-003.)
+- **FR-010b**: La cola MUST aceptar un máximo de **10 archivos en total**, contando todas las
+  categorías juntas. Al intentar superarlo, el sistema MUST rechazar los excedentes ANTES de
+  agregarlos, indicando el tope y cuántos entraron. Los límites de tamaño por archivo definidos
+  en 001 siguen vigentes y son independientes de este tope.
+- **FR-011** *(enmendado 2026-07-13)*: Cada grupo MUST mostrar su nombre, la cantidad de
+  archivos y las filas de sus archivos. El formato destino MUST elegirse **por archivo**, no
+  por grupo: cada fila expone su propio selector, poblado únicamente con los destinos que el
+  registry declara válidos para el tipo detectado de ese archivo (001 §FR-023b).
+- **FR-011b** *(nuevo 2026-07-13)*: Las filas sin formato destino elegido MUST señalarse de
+  forma visible y no-cromática, y MUST NOT bloquear la conversión del resto de la cola
+  (001 §FR-023c).
 - **FR-012**: El grupo "No soportados" MUST NOT ofrecer selector de formato ni acción de
   convertir.
 - **FR-013**: La barra de descarga en ZIP MUST ser visible cuando haya 2 o más archivos listos.
@@ -260,7 +321,14 @@ funciona idéntica pero muda.
 - **FR-018**: El estado `done` MUST ofrecer la acción "Descargar" y MUST marcar visualmente
   los archivos ya descargados, sin impedir volver a descargarlos.
 - **FR-019**: El estado `error` MUST mostrar la causa concreta del fallo (nunca un mensaje
-  genérico) y una acción de salida: quitar o reintentar, según el caso.
+  genérico) y una acción de salida.
+- **FR-019b**: La acción **"Reintentar"** MUST ofrecerse únicamente ante errores **transitorios**,
+  es decir aquellos que pueden resolverse repitiendo la operación: memoria insuficiente, fallo
+  del motor de conversión, o una cancelación previa del usuario.
+- **FR-019c**: La acción "Reintentar" MUST NOT ofrecerse ante errores **determinísticos**, donde
+  repetir daría exactamente el mismo resultado: archivo corrupto, formato no soportado, tamaño
+  excedido, o PDF escaneado sin capa de texto. En esos casos la única salida es "Quitar".
+  Ofrecer un reintento condenado al mismo error violaría la honestidad de la interfaz.
 - **FR-020**: El estado `prep` (motor cargando) MUST ser visualmente distinto de `converting`,
   mostrar el texto "esperando al conversor…" y su propio indicador, y MUST NOT mostrar un
   porcentaje de progreso falso.
@@ -276,8 +344,11 @@ funciona idéntica pero muda.
 - **FR-023**: Ante un formato no soportado, el sistema MUST explicar qué formatos sí se
   aceptan y ofrecer la acción "Quitar".
 - **FR-024**: Ante un PDF escaneado sin capa de texto con destino DOCX o TXT, el sistema MUST
-  avisar que no se puede extraer texto, y MUST mostrar la acción de OCR **deshabilitada y
-  rotulada "próximamente"**, nunca como acción activa.
+  avisar que no se puede extraer texto, y MUST mostrar la acción de OCR **visible pero
+  inerte**: rotulada con el texto exacto **"OCR (próximamente)"**, marcada como deshabilitada
+  para tecnologías asistivas (`aria-disabled`), y sin ejecutar ninguna acción al activarla. La
+  acción MUST NOT estar ausente (el usuario debe enterarse de que la función existirá) ni
+  MUST NOT parecer activa.
 - **FR-025**: Ante un video sin pista de audio con destino MP3, el sistema MUST avisar que no
   hay audio que extraer y MUST ofrecer como alternativa convertir el video a otro formato de
   video.
@@ -289,31 +360,63 @@ funciona idéntica pero muda.
 
 **Input previo requerido**
 
-- **FR-028**: Ante una conversión MP3→MP4, el sistema MUST pedir una imagen de portada (o la
-  generación de un waveform) y MUST bloquear el botón "Convertir" hasta que se resuelva,
-  indicando claramente qué falta.
+- **FR-028**: Ante una conversión MP3→MP4, el sistema MUST generar automáticamente un waveform
+  como imagen de fondo por defecto, de modo que la conversión siempre tenga un resultado válido
+  sin intervención del usuario.
+- **FR-028b**: El usuario MUST poder reemplazar ese waveform por una imagen de portada propia,
+  y MUST poder volver al waveform si cambia de idea. La interfaz MUST mostrar cuál de las dos
+  opciones está activa.
+- **FR-028c**: La conversión MP3→MP4 MUST NOT bloquear el botón "Convertir" en ningún momento,
+  ni para su grupo ni para la cola: al haber siempre un waveform por defecto, no existe un
+  estado de "falta un insumo".
 
 **Sonido**
 
 - **FR-029**: Con el sonido habilitado, el sistema MUST reproducir un sonido distinto y
-  reconocible para cada uno de estos eventos: (a) archivos soltados con éxito, (b) conversión
-  completada con éxito, (c) error (archivo rechazado o conversión fallida). Los assets
-  concretos los aporta el propietario (ver DEP-002); esta spec fija los eventos, no los
-  archivos.
+  reconocible para exactamente estos tres momentos, y ninguno más entre los obligatorios:
+  - **(a) Drop**: un sonido por **gesto de soltar**, no por archivo. Soltar 10 archivos suena
+    una vez.
+  - **(b) Rechazo al agregar**: si el gesto de soltar produjo archivos rechazados (no
+    soportados, vacíos, o que exceden el tamaño), suena **un** sonido de error por gesto,
+    independientemente de cuántos archivos se rechazaron.
+  - **(c) Fin de cola**: un único sonido cuando la cola **termina por completo** (no queda
+    ningún archivo en `converting` ni en `prep`), con dos variantes distinguibles: "terminó
+    todo bien" y "terminó con errores".
+
+  Los assets concretos los aporta el propietario (ver DEP-002); esta spec fija los eventos, no
+  los archivos.
+- **FR-029b**: El sistema MUST NOT reproducir un sonido de éxito por cada archivo que termina.
+  El progreso archivo por archivo se comunica **solo visualmente** (barra y estado en la fila).
 - **FR-030**: El sistema MAY reproducir sonidos adicionales sutiles para hover/entrada en el
-  dropzone, inicio de conversión, descarga y generación de ZIP.
-- **FR-031**: El sonido MUST estar silenciado por defecto; el usuario MUST poder activarlo o
-  silenciarlo con un control visible y alcanzable por teclado.
-- **FR-032**: La preferencia de sonido MUST persistir entre sesiones en almacenamiento local
-  del navegador. MUST NOT persistirse ningún dato de los archivos del usuario, solo
-  preferencias de interfaz.
+  dropzone, descarga y generación de ZIP. MUST NOT agregar sonidos por archivo individual.
+- **FR-031**: El sonido MUST estar **silenciado por defecto** en la primera visita, sin
+  excepción: la app MUST NOT intentar inferir una preferencia de sonido del sistema (no existe
+  hoy una señal estándar y confiable para ello). El usuario MUST poder activarlo o silenciarlo
+  con un control visible y alcanzable por teclado, cuyo estado (activado/silenciado) sea
+  evidente sin depender del color.
+- **FR-032**: La preferencia de sonido MUST persistir entre sesiones en `localStorage`, bajo
+  una **única clave** que contenga un objeto de preferencias de interfaz. El contenido
+  persistido MUST limitarse al estado del sonido. MUST NOT persistirse ningún dato de archivos:
+  ni contenidos, ni nombres, ni tamaños, ni historial de conversiones.
+- **FR-032b**: Si el valor almacenado está ausente, corrupto o es ilegible, el sistema MUST
+  caer al valor por defecto (silenciado) sin mostrar ningún error.
 - **FR-033**: Todo evento sonoro MUST tener un equivalente visual simultáneo. Ningún estado ni
   resultado MUST existir únicamente en el canal de audio.
 - **FR-034**: Bajo `prefers-reduced-motion: reduce`, el sistema MUST NOT reproducir sonidos,
-  aunque la preferencia de sonido esté activada.
-- **FR-035**: Los sonidos MUST ser cortos y de volumen moderado, y MUST NOT solaparse de forma
-  molesta. Cuando un lote de conversiones termine casi simultáneamente, el sistema MUST
-  consolidar el resultado en un único sonido de "lote listo".
+  aunque la preferencia de sonido esté activada. La preferencia del sistema **vetea** a la del
+  usuario (Principio XIII).
+- **FR-034b**: Cuando el veto de FR-034 esté activo, el control de sonido MUST mostrar su
+  **efecto real** (silenciado), no la preferencia guardada, y MUST explicar el motivo de forma
+  visible (por ejemplo: "silenciado por tu preferencia de menos movimiento"). MUST NOT
+  presentarse como "activado" mientras no suena nada.
+- **FR-034c**: La preferencia del usuario MUST conservarse intacta en el almacenamiento local
+  aunque esté vetada, de modo que el sonido vuelva a funcionar si el usuario desactiva
+  `prefers-reduced-motion` en su sistema, sin tener que volver a activarlo a mano.
+- **FR-035**: Los sonidos MUST ser cortos y de volumen moderado. Por construcción de FR-029 no
+  puede haber una avalancha de sonidos de éxito (solo suena el fin de cola), pero el sistema
+  MUST además garantizar que dos sonidos nunca se solapen: si un sonido se dispara mientras otro
+  está sonando, el nuevo se **descarta**. MUST NOT encolarse (sonaría después de que el evento
+  ya pasó) ni mezclarse a volumen sumado.
 - **FR-036**: El grupo "No soportados" MUST NOT disparar sonidos de éxito.
 - **FR-037**: Los assets de audio MUST ser locales y estar precargados; MUST NOT haber ninguna
   petición de red en runtime para reproducir un sonido.
@@ -332,9 +435,17 @@ funciona idéntica pero muda.
   tabulación lógico y con foco visible que cumpla el contraste 3:1.
 - **FR-042**: Los controles MUST tener roles y etiquetas accesibles; los íconos que transmiten
   información MUST tener alternativa textual.
-- **FR-043**: Los cambios de estado relevantes (conversión lista, error, lote terminado) MUST
-  anunciarse a lectores de pantalla mediante una región `aria-live`, consolidando los anuncios
-  de lote para no saturar.
+- **FR-043**: Los cambios de estado MUST anunciarse a lectores de pantalla mediante una región
+  `aria-live` **cortés** (no asertiva), con anuncios **siempre consolidados por lote**, tanto
+  para éxitos como para errores. Ejemplo: "7 archivos listos, 3 con error". El sistema MUST
+  NOT emitir un anuncio por cada archivo que cambia de estado.
+- **FR-043b**: Como el anuncio consolidado no nombra los archivos fallados, cada fila en estado
+  `error` MUST exponer su causa concreta como texto accesible al recibir el foco, de modo que
+  un usuario de lector de pantalla pueda recorrer la cola y averiguar qué falló y por qué sin
+  depender del anuncio.
+- **FR-043c**: El inicio de una conversión y la aparición del estado `prep` MUST anunciarse una
+  sola vez por lote (por ejemplo "convirtiendo 10 archivos", "esperando al conversor"), nunca
+  por archivo.
 - **FR-044**: Ningún estado ni resultado MUST comunicarse únicamente por color.
 
 **Privacidad y preferencias**
@@ -346,15 +457,22 @@ funciona idéntica pero muda.
 
 ### Key Entities
 
-- **Preferencias de interfaz**: estado del sonido (activado/silenciado). Persiste localmente
-  entre sesiones. No contiene datos de archivos.
-- **Evento sonoro**: un nombre semántico (drop, éxito, error, lote-listo, inicio, descarga,
-  zip) al que la capa de sonido asocia un asset. Todo evento tiene un equivalente visual
-  obligatorio.
+- **Preferencias de interfaz**: un único objeto en `localStorage` bajo una única clave, con el
+  estado del sonido (activado/silenciado) como su único contenido. No contiene datos de
+  archivos. Ante un valor ausente o corrupto, se cae al default (silenciado).
+- **Evento sonoro**: un nombre semántico al que la capa de sonido asocia un asset. Los
+  obligatorios son exactamente tres: `drop` (por gesto), `rechazo` (por gesto), y
+  `fin-de-cola` con dos variantes (`todo-ok` y `con-errores`). Los opcionales: hover en el
+  dropzone, descarga y zip. Todo evento tiene un equivalente visual obligatorio, y **no existe
+  ningún evento sonoro por archivo individual**.
 - **Estado visual de archivo**: la representación de los cinco estados de 001 como una terna
   (color, ícono/forma, texto) más el conjunto de acciones disponibles.
 - **Grupo de la cola**: una categoría (imagen, documento, video, audio, no soportados) con su
-  nombre, cantidad, formato destino único y avisos previos aplicables.
+  nombre, cantidad, formato destino único y avisos previos aplicables. Varios grupos coexisten
+  en la cola (formatos de origen mezclados), sujetos a un tope global de 10 archivos.
+- **Clase de error**: cada error es **transitorio** (reintentable: memoria, motor, cancelación)
+  o **determinístico** (no reintentable: corrupto, no soportado, tamaño excedido, PDF escaneado).
+  La clase determina qué acciones de salida ofrece la fila.
 - **Estado de actividad del fondo**: el nivel de intensidad derivado de la interacción (reposo,
   hover, drag-over, conversión) y la posición del foco de brillo.
 
@@ -373,12 +491,19 @@ funciona idéntica pero muda.
   que la conversión pueda iniciarse, verificado con un archivo real por caso.
 - **SC-005**: La app permanece interactiva, sin bloqueos perceptibles, mientras el fondo
   animado corre y hay conversiones en curso.
-- **SC-006**: Sin aceleración por hardware disponible, la app conserva el 100% de su
-  funcionalidad y no muestra ningún error al usuario.
+- **SC-006**: Sin aceleración por hardware disponible, o con el fondo degradado por bajo
+  rendimiento (FPS < 30 durante 2s), la app conserva el 100% de su funcionalidad y no muestra
+  ningún error al usuario.
+- **SC-006b**: Una conversión MP3→MP4 se completa sin que el usuario aporte ninguna imagen: el
+  waveform automático garantiza que "Convertir" nunca queda bloqueado.
 - **SC-007**: Un usuario nuevo no oye ningún sonido hasta que lo habilita explícitamente, y la
   preferencia sobrevive a recargar la página.
-- **SC-008**: Un lote de 20 archivos que termina simultáneamente produce exactamente 1 sonido,
-  no 20.
+- **SC-008**: Una cola llena (10 archivos) produce exactamente 1 sonido (el de fin de cola), no
+  10: ningún archivo individual suena al terminar.
+- **SC-008b**: Una cola llena (10 archivos) produce exactamente 1 anuncio de lector de pantalla
+  al terminar, no 10, y ese anuncio informa cuántos quedaron listos y cuántos con error.
+- **SC-008c**: La causa concreta de cada error es alcanzable con el teclado y legible por un
+  lector de pantalla, recorriendo las filas de la cola.
 - **SC-009**: Con `prefers-reduced-motion` activo no se reproduce ningún sonido y el fondo no
   anima, conservando el 100% de la funcionalidad.
 - **SC-010**: Cero peticiones de red en runtime más allá de la carga inicial de la propia app y
@@ -388,13 +513,15 @@ funciona idéntica pero muda.
 
 ## Assumptions
 
-- **Silencio por defecto**: no existe hoy una preferencia de sistema estándar y confiable para
-  "menos sonido" en los navegadores, a diferencia de `prefers-reduced-motion`. Por eso la
-  disyuntiva del Principio XIII ("desactivado por defecto **o** respeta la preferencia del
-  sistema") se resuelve eligiendo **desactivado por defecto**, con `prefers-reduced-motion`
-  como veto adicional que silencia aunque el usuario haya activado el sonido.
-- **Reduce-motion sin override**: se respeta la preferencia del sistema y no se ofrece un
-  override en la interfaz, para no multiplicar controles.
+- **Silencio por defecto** (decidido, ver Clarifications): no existe hoy una preferencia de
+  sistema estándar y confiable para "menos sonido" en los navegadores, a diferencia de
+  `prefers-reduced-motion`. Por eso la disyuntiva del Principio XIII ("desactivado por defecto
+  **o** respeta la preferencia del sistema") se resuelve eligiendo **desactivado por defecto**,
+  con `prefers-reduced-motion` como veto adicional que silencia aunque el usuario haya activado
+  el sonido.
+- **Reduce-motion sin override** (decidido): se respeta la preferencia del sistema y no se
+  ofrece un override en la interfaz, para no multiplicar controles. En consecuencia, la única
+  preferencia persistida es el estado del sonido (FR-032).
 - **Tema único**: solo el tema oscuro. No hay conmutador claro/oscuro.
 - **Categorías y formatos destino** salen del registry de 001; esta feature no los define ni
   los altera.
@@ -419,12 +546,25 @@ historias que dependen de ellos; el resto de la feature puede avanzar sin ellos.
   Hasta que exista, los únicos valores firmes son la base `#0b0c11` y los acentos
   cálidos/violáceos. La paleta final DEBE validarse contra el contraste AA de FR-040 antes de
   adoptarse: si un color del mockup no cumple, gana la accesibilidad (Principio XII).
+- **DEP-003 — Enmienda a la spec 001: ✅ EJECUTADA (2026-07-13)**: 001 declaraba los lotes
+  heterogéneos fuera de alcance y rechazaba todo archivo cuyo formato difiriera del primero.
+  Fue enmendada: su FR-023 ahora admite hasta 10 archivos de **formatos mezclados**, y sus
+  nuevos FR-023b/FR-023c establecen **un formato destino por archivo** (no por lote ni por
+  grupo). Ver `specs/001-convertitodo/spec.md` §Enmiendas.
+
+  **Pendiente**: la enmienda al **código y los tests** de 001 está especificada en las tareas
+  **T047–T051** de `specs/001-convertitodo/tasks.md`, pero **todavía no implementada**. Hasta
+  ejecutarlas, `src/lib/directory-input.ts` sigue rechazando archivos de formato distinto, y la
+  UI de esta feature no tendrá lotes mixtos sobre los que operar.
+
 - **DEP-002 — Assets de audio** (bloquea FR-029/FR-037, y por lo tanto la Historia 4): el
   propietario aportará los archivos de sonido y los versionará localmente en el repositorio.
-  Esta spec define únicamente los **eventos semánticos** (drop, éxito, error, lote-listo, y los
-  opcionales inicio / descarga / zip); el mapeo evento → archivo se resuelve cuando los assets
-  existan. Requisitos que los assets deben cumplir: cortos, volumen moderado, licencia apta
-  para publicar el proyecto, y servidos localmente sin CDN en runtime (Principio XVI).
+  Esta spec define únicamente los **eventos semánticos** (los tres obligatorios: `drop`,
+  `rechazo`, `fin-de-cola` en sus variantes `todo-ok` y `con-errores`; más los opcionales hover
+  / descarga / zip); el mapeo evento → archivo se resuelve cuando los assets existan. Se
+  necesitan por lo tanto **al menos 4 sonidos distinguibles**. Requisitos que deben cumplir:
+  cortos, volumen moderado, licencia apta para publicar el proyecto, y servidos localmente sin
+  CDN en runtime (Principio XVI).
 
 ## Fuera de alcance
 
