@@ -30,23 +30,19 @@ export async function readDroppedItems(items: DataTransferItemList): Promise<Inc
 }
 
 /**
- * Aplica las reglas de ingreso del lote (FR-023): hasta 10 archivos del mismo formato
- * que el primero aceptado; el resto se rechaza con motivo específico.
+ * Aplica las reglas de ingreso del lote (FR-023): hasta 10 archivos en total, con formatos
+ * de origen mezclados. Un archivo nunca se rechaza por diferir del formato de otro; solo se
+ * rechaza por estar vacío, ser de tipo no soportado o exceder el tope de la cola.
  */
 export async function intakeFiles(incoming: readonly IncomingFile[], existing: readonly FileEntry[] = []): Promise<FileEntry[]> {
-  const formatKey = (type: FileEntry['detectedType']): string => type.mime || type.extension
-  const accepted = existing.filter((entry) => entry.state !== 'rejected')
-  let batchFormat = accepted[0] ? formatKey(accepted[0].detectedType) : undefined
-  let acceptedCount = accepted.length
+  let acceptedCount = existing.filter((entry) => entry.state !== 'rejected').length
   const entries: FileEntry[] = []
   for (const { file, relativePath } of incoming) {
     const detectedType = await detectFileType(file)
     const base = { id: crypto.randomUUID(), file, name: file.name, sizeBytes: file.size, detectedType, relativePath }
     if (file.size === 0) { entries.push({ ...base, state: 'rejected', rejectionReason: 'El archivo está vacío.' }); continue }
     if (detectedType.kind === 'unknown') { entries.push({ ...base, state: 'rejected', rejectionReason: `Tipo no soportado (${detectedType.mime || detectedType.extension || 'desconocido'}): no hay conversiones disponibles.` }); continue }
-    if (batchFormat && formatKey(detectedType) !== batchFormat) { entries.push({ ...base, state: 'rejected', rejectionReason: `Formato distinto al del lote actual: el lote acepta ${batchFormat}.` }); continue }
     if (acceptedCount >= MAX_BATCH_FILES) { entries.push({ ...base, state: 'rejected', rejectionReason: `Límite de ${MAX_BATCH_FILES} archivos por lote excedido.` }); continue }
-    batchFormat ??= formatKey(detectedType)
     acceptedCount += 1
     entries.push({ ...base, state: 'ready' })
   }
