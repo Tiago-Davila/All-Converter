@@ -85,7 +85,7 @@ fixture real en `tests/fixtures/`.
 **Prueba independiente**: fixtures MP4/MP3 convierten, y sin SAB se muestra modo compatible sin bloquear desktop.
 
 - [X] T035 [US5] Configurar carga diferida de cores ffmpeg locales, selección MT/ST, indicador de descarga separado del progreso de conversión y tests de capability/progreso en `src/lib/ffmpeg.ts`, `src/workers/media.worker.ts` y `tests/lib/ffmpeg.test.ts` (depende de T004, T016–T018).
-- [ ] T036 [US5] Implementar MP4→MP3 y fixture de vídeo con/sin audio en `src/converters/mp4-to-mp3.ts`, `src/workers/media.worker.ts` y `tests/converters/mp4-to-mp3.test.ts` (depende de T035).
+- [X] T036 [US5] Implementar MP4→MP3 y fixture de vídeo con/sin audio en `src/converters/mp4-to-mp3.ts`, `src/workers/media.worker.ts` y `tests/converters/mp4-to-mp3.test.ts` (depende de T035).
 - [ ] T037 [US5] Implementar MP3→MP4 con portada/waveform y fixture en `src/converters/mp3-to-mp4.ts`, `src/workers/media.worker.ts` y `tests/converters/mp3-to-mp4.test.ts` (depende de T035).
 - [ ] T038 [P] [US5] Implementar conversiones MP3↔WAV/OGG/M4A y fixture en `src/converters/audio.ts`, `src/workers/media.worker.ts` y `tests/converters/audio.test.ts` (depende de T035).
 

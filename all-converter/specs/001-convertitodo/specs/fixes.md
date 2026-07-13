@@ -54,7 +54,7 @@
 
 ## Fase 6 — Puertas finales
 
-- [ ] FIX026 Añadir conversión real MP4→MP3 con fixtures con audio y sin audio.
+- [X] FIX026 Añadir conversión real MP4→MP3 con fixtures con audio y sin audio.
 - [ ] FIX027 Añadir conversión real MP3→MP4 con portada y waveform.
 - [ ] FIX028 Añadir conversiones reales MP3/WAV/OGG/M4A con validación de contenedores.
 - [ ] FIX029 Añadir pruebas reales PNG/JPG/WebP, transparencia, animación, dimensiones y memoria.

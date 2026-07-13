@@ -42,11 +42,8 @@ self.onmessage = async ({ data }: MessageEvent<WorkerRequest>) => {
     ffmpeg.on('progress', ({ progress }) => send({ kind: 'progress', jobId: data.jobId, progress: { percent: Math.round(progress * 100), stage: 'Convirtiendo' } }))
     await ffmpeg.writeFile(input.name, new Uint8Array(input.buffer))
     if (data.operation === 'extract-mp3') {
-      try {
-        await ffmpeg.exec(['-i', input.name, '-map', '0:a:0', '-vn', '-q:a', '2', outputName])
-      } catch {
-        throw new Error('El video no contiene pista de audio.')
-      }
+      const exitCode = await ffmpeg.exec(['-i', input.name, '-map', '0:a:0', '-vn', '-q:a', '2', outputName])
+      if (exitCode !== 0) throw new Error('El video no contiene pista de audio.')
     }
     else if (data.operation === 'mp3-mp4') {
       const cover = data.inputs[1]
