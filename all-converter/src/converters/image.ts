@@ -1,9 +1,10 @@
 import { startWorker } from '../workers/client'
 import type { WorkerOptions, WorkerStartRequest } from '../workers/types'
 import type { Converter } from './types'
+import { IMAGE_SOURCE } from './sources'
 
 export const imageConverter: Converter = {
-  id: 'image-convert', label: 'Convertir imagen', from: ['image'], to: 'png|jpg|webp', maxSizeMB: 50,
+  id: 'image-convert', label: 'Convertir imagen', from: [IMAGE_SOURCE], to: 'png|jpg|webp', maxSizeMB: 50,
   async convert(file, onProgress, options, signal) {
     if (signal.aborted) throw new DOMException('Cancelado', 'AbortError')
     let buffer: ArrayBuffer

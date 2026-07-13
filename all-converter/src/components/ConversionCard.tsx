@@ -28,7 +28,7 @@ export function ConversionCard({ entry }: { entry: FileEntry }) {
   const converter = available.find((candidate) => candidate.id === converterId)
   const targets = converter ? converter.to.split('|') : []
   const selectedTarget = target && targets.includes(target) ? target : targets[0]
-  const mediaBlocked = Boolean(converter?.from.some((kind) => kind === 'audio' || kind === 'video') && isMobileDevice())
+  const mediaBlocked = Boolean(converter?.from.some((source) => source.kind === 'audio' || source.kind === 'video') && isMobileDevice())
 
   useEffect(() => () => { downloads.forEach((download) => URL.revokeObjectURL(download.url)) }, [downloads])
 
