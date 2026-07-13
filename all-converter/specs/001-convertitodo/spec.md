@@ -21,6 +21,10 @@
 - Q: ¿Cómo se organiza el ZIP de resultados de una carpeta? → A: Replica las subcarpetas originales; cada resultado conserva su ruta relativa y nueva extensión.
 - Q: ¿Qué se muestra sin SharedArrayBuffer? → A: Un aviso persistente antes y durante audio/video: “modo compatible, conversión más lenta”; la conversión continúa automáticamente en un solo hilo.
 - Q: ¿Qué ocurre en PDF→TXT sin capa de texto? → A: Se rechaza la conversión sin generar archivo, explicando que requeriría OCR, que queda fuera de alcance.
+- Q: ¿Cuántas conversiones simultáneas procesa la cola? → A: Exactamente 2; el resto espera en estado "en cola".
+- Q: ¿Cómo se verifican «tabla legible» y «estructura general»? → A: Con criterios mínimos: tabla legible = primera fila como encabezado, todas las filas y columnas presentes, texto sin truncar ni solapar, paginado automático; estructura general = títulos, párrafos y listas en el mismo orden que el documento original.
+- Q: ¿Metas de rendimiento para conversiones no-imagen (PDF, planillas, audio, video)? → A: Sin metas de tiempo absolutas (el hardware client-side varía); se exige que el indicador de progreso o actividad aparezca antes de 2 segundos de iniciada cualquier conversión, con la UI fluida (SC-004).
+- Q: ¿Qué CSV se soportan y qué es «ilegible»? → A: Se detectan los delimitadores coma, punto y coma, tabulación y barra vertical, y las codificaciones UTF-8 (con o sin BOM) y Windows-1252. Un CSV es ilegible si tras decodificar quedan caracteres de reemplazo o si ningún delimitador candidato produce columnas consistentes; en ese caso se rechaza con mensaje accionable.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -89,7 +93,8 @@ conversión se valida con un archivo real.
    muestra los datos como tabla legible.
 5. **Given** un DOCX con texto, títulos y listas, **When** el usuario elige PDF,
    **Then** antes de convertir la app comunica que la fidelidad visual es parcial, y el
-   PDF resultante conserva el texto y la estructura general.
+   PDF resultante conserva el texto completo con títulos, párrafos y listas en el
+   mismo orden que el documento original.
 6. **Given** un DOCX, **When** el usuario elige TXT o HTML, **Then** el archivo
    descargado contiene el texto del documento (y en HTML, la estructura de títulos,
    párrafos y listas).
@@ -155,8 +160,8 @@ contiene 10 JPG válidos.
    subcarpetas) entran a la cola hasta el máximo de 10, y el resto (formato distinto,
    no soportado o excedente del límite) se lista como rechazado con motivo.
 2. **Given** 10 imágenes del mismo tipo en la cola, **When** el usuario elige un
-   formato destino y convierte, **Then** se procesan con paralelismo limitado (2-3
-   simultáneas), mostrando progreso por archivo y progreso global.
+   formato destino y convierte, **Then** se procesan de a 2 simultáneas como máximo,
+   mostrando progreso por archivo y progreso global.
 3. **Given** un lote convertido con éxito, **When** el usuario descarga, **Then**
    obtiene un único ZIP que replica las subcarpetas originales; cada resultado
    conserva su ruta relativa con la nueva extensión.
@@ -261,9 +266,13 @@ visible sin scroll en la pantalla inicial.
 - **Archivo de 0 bytes**: se rechaza con mensaje claro antes de convertir.
 - **MP4 sin pista de audio**: MP4→MP3 falla con mensaje específico ("el video no
   contiene pista de audio").
-- **CSV con delimitador distinto de coma o codificación no UTF-8**: la app intenta
-  detectar delimitador y codificación comunes; si el resultado es ilegible, el preview
-  permite detectarlo antes de descargar.
+- **CSV con delimitador distinto de coma o codificación no UTF-8**: la app detecta
+  los delimitadores coma, punto y coma, tabulación y barra vertical, y las
+  codificaciones UTF-8 (con o sin BOM) y Windows-1252. Si tras decodificar quedan
+  caracteres de reemplazo, o ningún delimitador candidato produce columnas
+  consistentes, el CSV se considera ilegible y se rechaza con un mensaje que sugiere
+  reexportarlo como UTF-8; el preview permite verificar el resultado antes de
+  descargar.
 - **XLSX con múltiples hojas**: al convertir a CSV/JSON se genera un archivo por hoja
   (ZIP si resultan varios), para no perder datos silenciosamente.
 - **DOCX sin tablas convertido a XLSX**: falla con mensaje específico ("el documento
@@ -316,7 +325,9 @@ visible sin scroll en la pantalla inicial.
 - **FR-013**: El sistema MUST convertir CSV a XLSX y JSON tabular (array de objetos
   planos) a XLSX; los JSON con otra forma se rechazan con mensaje específico.
 - **FR-014**: El sistema MUST convertir XLSX y CSV a PDF, renderizando los datos como
-  tabla legible.
+  tabla legible: la primera fila actúa como encabezado, todas las filas y columnas de
+  la hoja están presentes, ningún texto queda truncado ni solapado, y el contenido que
+  excede una página continúa en páginas siguientes.
 - **FR-015**: El sistema MUST convertir PDF a imágenes PNG o JPG, generando una imagen
   por página.
 - **FR-016**: El sistema MUST convertir PDF a TXT extrayendo el texto en orden de
@@ -333,8 +344,9 @@ visible sin scroll en la pantalla inicial.
   por el usuario, generando un PDF por rango.
 - **FR-020**: El sistema MUST permitir rotar páginas de un PDF (90°, 180°, 270°),
   aplicado a páginas seleccionadas o a todas.
-- **FR-021**: El sistema MUST convertir DOCX a PDF con fidelidad parcial, comunicando
-  la limitación antes de convertir.
+- **FR-021**: El sistema MUST convertir DOCX a PDF con fidelidad parcial, conservando
+  el texto completo con títulos, párrafos y listas en el mismo orden que el documento
+  original, y comunicando la limitación antes de convertir.
 - **FR-022**: El sistema MUST convertir DOCX a TXT y a HTML.
 
 #### Conversión por lote (Fase 2)
@@ -344,8 +356,9 @@ visible sin scroll en la pantalla inicial.
   excedan el límite de 10, o cuyo formato difiera del formato del lote en curso, se
   rechazan con mensaje que explique el motivo. Los lotes con formatos de origen
   mezclados quedan fuera de alcance.
-- **FR-024**: El sistema MUST procesar la cola con paralelismo limitado (2-3
-  conversiones simultáneas), sin degradar la fluidez de la interfaz.
+- **FR-024**: El sistema MUST procesar la cola con exactamente 2 conversiones
+  simultáneas como máximo (las demás esperan en estado "en cola"), sin degradar la
+  fluidez de la interfaz.
 - **FR-025**: El sistema MUST mostrar progreso individual por archivo y progreso
   global del lote.
 - **FR-026**: Cuando una conversión produzca múltiples archivos o un lote produzca
@@ -441,7 +454,10 @@ visible sin scroll en la pantalla inicial.
 - **SC-001**: Un usuario nuevo completa su primera conversión (soltar archivo, elegir
   destino, descargar) en un máximo de 3 acciones y sin instrucciones externas.
 - **SC-002**: Una imagen de 10MB se convierte en menos de 3 segundos en hardware de
-  consumo promedio.
+  consumo promedio. Las demás categorías (PDF, planillas, documentos, audio, video) no
+  tienen meta de tiempo total absoluta por la variabilidad del hardware client-side.
+- **SC-002b**: En toda conversión, un indicador de progreso o actividad aparece antes
+  de 2 segundos de iniciada.
 - **SC-003**: La pantalla inicial es interactiva en menos de 2 segundos en una
   conexión móvil promedio (4G); los recursos pesados de conversión se descargan solo
   cuando una conversión los necesita.
