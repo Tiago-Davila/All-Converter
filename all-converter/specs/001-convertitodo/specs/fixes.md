@@ -58,7 +58,7 @@
 - [X] FIX027 Añadir conversión real MP3→MP4 con portada y waveform.
 - [X] FIX028 Añadir conversiones reales MP3/WAV/OGG/M4A con validación de contenedores.
 - [X] FIX029 Añadir pruebas reales PNG/JPG/WebP, transparencia, animación, dimensiones y memoria.
-- [ ] FIX030 Añadir pruebas de navegador para workers, red, offline, compatibilidad y presupuesto del entry.
+- [X] FIX030 Añadir pruebas de navegador para workers, red, offline, compatibilidad y presupuesto del entry.
 - [ ] FIX031 Incorporar lint, coverage, bundle budget y detección automática de workers stub como puertas de CI.
 
 ## Dependencias
