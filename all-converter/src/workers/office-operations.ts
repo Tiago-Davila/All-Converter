@@ -52,8 +52,15 @@ async function spreadsheet(input: WorkerInput, options: WorkerOptions, onProgres
 async function spreadsheetPdf(input: WorkerInput, onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> {
   const [{ jsPDF }, { default: autoTable }, xlsx] = await Promise.all([import('jspdf'), import('jspdf-autotable'), import('xlsx')])
   const workbook = xlsx.read(input.buffer, { type: 'array' })
-  const rows = xlsx.utils.sheet_to_json<string[]>(workbook.Sheets[workbook.SheetNames[0]], { header: 1 })
-  const pdf = new jsPDF(); autoTable(pdf, { head: [rows[0] ?? []], body: rows.slice(1) })
+  if (!workbook.SheetNames.length) throw new Error('La planilla no contiene hojas.')
+  const pdf = new jsPDF()
+  workbook.SheetNames.forEach((sheetName, index) => {
+    if (index > 0) pdf.addPage()
+    const rows = xlsx.utils.sheet_to_json<string[]>(workbook.Sheets[sheetName], { header: 1, defval: '' })
+    pdf.setFontSize(12); pdf.text(sheetName, 14, 14)
+    autoTable(pdf, { startY: 20, head: [rows[0] ?? []], body: rows.slice(1), styles: { overflow: 'linebreak', cellWidth: 'wrap' }, horizontalPageBreak: true })
+    progress(onProgress, Math.round((index + 1) / workbook.SheetNames.length * 90), `Hoja ${index + 1} de ${workbook.SheetNames.length}`)
+  })
   const buffer = pdf.output('arraybuffer'); progress(onProgress, 100, 'PDF creado')
   return [{ name: `${baseName(input.name)}.pdf`, mime: 'application/pdf', buffer, sizeBytes: buffer.byteLength, previewKind: 'pdf' }]
 }
