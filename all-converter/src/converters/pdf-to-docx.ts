@@ -1,5 +1,4 @@
-import { loadPdfJs } from '../lib/pdfjs'
-import { SCANNED_PDF_ERROR } from './pdf-extract'
+import { SCANNED_PDF_ERROR, openPdf } from './pdf-extract'
 import type { Converter } from './types'
 
 interface Line { text: string; fontSize: number; y: number }
@@ -12,8 +11,7 @@ function median(values: number[]): number {
 export const pdfToDocxConverter: Converter = { id: 'pdf-to-docx', label: 'PDF a DOCX', from: ['pdf'], to: 'docx', maxSizeMB: 25,
   async convert(file, onProgress, _options, signal) {
     if (signal.aborted) throw new DOMException('Cancelado', 'AbortError')
-    const pdfjs = await loadPdfJs()
-    const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise
+    const pdf = await openPdf(file)
     const lines: Line[] = []
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
       if (signal.aborted) throw new DOMException('Cancelado', 'AbortError')
