@@ -48,7 +48,7 @@ export function FileQueue({ entries }: { entries: readonly FileEntry[] }) {
       }
     }), 2)
     if (collected.length) {
-      const buffer = await createZip(collected.map(({ result, relativePath }) => ({ name: result.name, buffer: result.buffer, relativePath })))
+      const buffer = await createZip(collected.map(({ result, relativePath }) => ({ name: result.name, buffer: result.buffer, relativePath })), controller.signal)
       setZipUrl(URL.createObjectURL(new Blob([buffer], { type: 'application/zip' })))
     }
     setRunning(false)

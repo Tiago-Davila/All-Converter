@@ -25,7 +25,7 @@
 - [X] FIX006 Implementar operaciones SheetJS, mammoth, docx y jsPDF en `src/workers/office.worker.ts` y migrar los conversores Office.
 - [X] FIX007 Implementar lectura/render/extracción en `src/workers/pdf-read.worker.ts` y escritura/manipulación en `src/workers/pdf-write.worker.ts`.
 - [X] FIX008 Cargar JSZip dinámicamente fuera del entry y ejecutar compresión pesada en worker.
-- [ ] FIX009 Probar que cancelar cualquier conversión pesada termina el worker y resuelve en menos de un segundo.
+- [X] FIX009 Probar que cancelar cualquier conversión pesada termina el worker y resuelve en menos de un segundo.
 
 ## Fase 3 — Corregir matriz y formatos
 
