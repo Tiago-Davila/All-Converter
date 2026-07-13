@@ -116,11 +116,18 @@ su propio formato destino** entre los válidos para su tipo.
 distinto a cada archivo, convertir, y obtener un ZIP con los 9 resultados en sus formatos
 respectivos.
 
-- [ ] T047 [US4] Eliminar la regla de rechazo por formato distinto al del lote (`batchFormat` y el motivo "Formato distinto al del lote actual") conservando `MAX_BATCH_FILES = 10`, en `src/lib/directory-input.ts`. Invertir el test que hoy afirma que los tipos mezclados se rechazan: ahora deben aceptarse, en `tests/lib/directory-input.test.ts`. Cubre FR-023. (Sin dependencias; es la base de la enmienda.)
-- [ ] T048 [US4] Modelar el formato destino **por archivo** en lugar de por lote: cada entrada de la cola pasa a tener su propio destino, y los destinos ofrecidos derivan del registry según el tipo detectado de ese archivo. Actualizar `src/converters/types.ts` y/o el estado de la cola según corresponda, con pruebas en `tests/lib/directory-input.test.ts`. Cubre FR-023b. (Depende de T047.)
-- [ ] T049 [US4] Exponer un selector de destino por fila en la cola, mostrando solo los formatos válidos para el tipo de ese archivo, y señalar las filas sin destino elegido. En `src/components/FileQueue.tsx` y `src/App.tsx`, con pruebas en `tests/components/batch-flow.test.tsx`. Cubre FR-023b y FR-023c. (Depende de T048.)
-- [ ] T050 [US4] Ajustar la conversión en lote para procesar cada archivo hacia **su** destino, omitiendo (sin bloquear) los que no tengan destino elegido, y verificar el ZIP resultante con un lote mixto real. En `src/App.tsx` y `tests/components/batch-flow.test.tsx`, con fixtures mixtos existentes. Cubre FR-023c y SC-008. (Depende de T049.)
-- [ ] T051 [US4] Revisar y actualizar los tests y textos que asumían lote homogéneo (incluida la invariante "10 homogéneos por lote" documentada en `specs/001-convertitodo/data-model.md`), y ejecutar la suite completa. (Depende de T047–T050.)
+- [X] T047 [US4] Eliminar la regla de rechazo por formato distinto al del lote (`batchFormat` y el motivo "Formato distinto al del lote actual") conservando `MAX_BATCH_FILES = 10`, en `src/lib/directory-input.ts`. Invertir el test que hoy afirma que los tipos mezclados se rechazan: ahora deben aceptarse, en `tests/lib/directory-input.test.ts`. Cubre FR-023. (Sin dependencias; es la base de la enmienda.)
+- [X] T048 [US4] Modelar el formato destino **por archivo** en lugar de por lote: cada entrada de la cola pasa a tener su propio destino, y los destinos ofrecidos derivan del registry según el tipo detectado de ese archivo. Actualizar `src/converters/types.ts` y/o el estado de la cola según corresponda, con pruebas en `tests/lib/directory-input.test.ts`. Cubre FR-023b. (Depende de T047.)
+- [X] T049 [US4] Exponer un selector de destino por fila en la cola, mostrando solo los formatos válidos para el tipo de ese archivo, y señalar las filas sin destino elegido. En `src/components/FileQueue.tsx` y `src/App.tsx`, con pruebas en `tests/components/batch-flow.test.tsx`. Cubre FR-023b y FR-023c. (Depende de T048.)
+- [X] T050 [US4] Ajustar la conversión en lote para procesar cada archivo hacia **su** destino, omitiendo (sin bloquear) los que no tengan destino elegido, y verificar el ZIP resultante con un lote mixto real. En `src/App.tsx` y `tests/components/batch-flow.test.tsx`, con fixtures mixtos existentes. Cubre FR-023c y SC-008. (Depende de T049.)
+- [X] T051 [US4] Revisar y actualizar los tests y textos que asumían lote homogéneo (incluida la invariante "10 homogéneos por lote" documentada en `specs/001-convertitodo/data-model.md`), y ejecutar la suite completa. (Depende de T047–T050.)
+
+## Phase 14: Enmienda — MP3→MP4 con waveform por defecto (FR-030)
+
+**Motivo**: enmienda del 2026-07-13 (ver `spec.md` §Enmiendas). El waveform pasa a ser el
+default y la conversión nunca se bloquea.
+
+- [ ] T052 [US5] Reflejar el waveform como default en `src/converters/mp3-to-mp4.ts`: actualizar el texto de `limitation` (hoy sugiere una elección obligatoria: "Elegí una portada propia o generá un waveform local") e invertir el default de `generateWaveform` para que un MP3→MP4 sin opciones produzca un MP4 válido con waveform. Prueba en `tests/converters/mp3-to-mp4.test.ts` que convertir **sin pasar ninguna opción de portada** produce un MP4 válido. Cubre FR-030. (Depende de T038.)
 
 ## Estrategia de entrega
 
