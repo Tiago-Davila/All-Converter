@@ -47,7 +47,7 @@
 
 - [X] FIX020 Reportar progreso real de descarga de los assets ffmpeg.
 - [X] FIX021 Añadir un pool exclusivo de concurrencia 1 para audio/video.
-- [ ] FIX022 Transferir portada, audio/video y resultados sin structured clone de buffers.
+- [X] FIX022 Transferir portada, audio/video y resultados sin structured clone de buffers.
 - [ ] FIX023 Liberar `ImageBitmap`, blobs, listeners, workers y WASM en bloques `finally`.
 - [ ] FIX024 Excluir WASM y chunks pesados del precache inicial y usar runtime caching local tras primer uso.
 - [ ] FIX025 Probar offline después del primer uso sin descargar ambos cores ffmpeg al iniciar la app.

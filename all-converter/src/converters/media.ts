@@ -27,7 +27,13 @@ export async function runMedia(
 
   const inputs: WorkerInput[] = [{ name: file.name, mime: file.type || undefined, buffer: input }]
   const cover = options.cover
-  if (cover instanceof ArrayBuffer) inputs.push({ name: 'cover.png', mime: 'image/png', buffer: cover })
+  if (cover instanceof ArrayBuffer) {
+    inputs.push({
+      name: typeof options.coverName === 'string' ? options.coverName : 'cover.png',
+      mime: typeof options.coverMime === 'string' ? options.coverMime : 'image/png',
+      buffer: cover,
+    })
+  }
 
   const workerOptions: WorkerOptions = {
     outputName: optionString(options, 'outputName'),

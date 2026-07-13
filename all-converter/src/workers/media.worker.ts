@@ -50,10 +50,11 @@ self.onmessage = async ({ data }: MessageEvent<WorkerRequest>) => {
     }
     else if (data.operation === 'mp3-mp4') {
       const cover = data.inputs[1]
-      if (cover) await ffmpeg.writeFile('cover.png', new Uint8Array(cover.buffer))
-      else if (data.options.generateWaveform === true) await ffmpeg.exec(['-i', input.name, '-filter_complex', 'aformat=channel_layouts=mono,showwavespic=s=1280x720:colors=0x22c55e', '-frames:v', '1', 'cover.png'])
+      const coverName = cover?.name ?? 'cover.png'
+      if (cover) await ffmpeg.writeFile(coverName, new Uint8Array(cover.buffer))
+      else if (data.options.generateWaveform === true) await ffmpeg.exec(['-i', input.name, '-filter_complex', 'aformat=channel_layouts=mono,showwavespic=s=1280x720:colors=0x22c55e', '-frames:v', '1', coverName])
       else throw new Error('Elegí una portada o generá un waveform para crear el video.')
-      await ffmpeg.exec(['-loop', '1', '-framerate', '30', '-i', 'cover.png', '-i', input.name, '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'libx264', '-tune', 'stillimage', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-shortest', outputName])
+      await ffmpeg.exec(['-loop', '1', '-framerate', '30', '-i', coverName, '-i', input.name, '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'libx264', '-tune', 'stillimage', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-shortest', outputName])
     } else await ffmpeg.exec(['-i', input.name, outputName])
     const output = await ffmpeg.readFile(outputName) as Uint8Array
     const results = [{ name: outputName, mime: outputMime(outputName), buffer: output.buffer as ArrayBuffer, sizeBytes: output.byteLength }]

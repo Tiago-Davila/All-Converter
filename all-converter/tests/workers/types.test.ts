@@ -42,8 +42,17 @@ describe('canal tipado de workers', () => {
 
   it('los transferibles se entregan sin copia', () => {
     const buffer = new Uint8Array([1, 2, 3]).buffer
-    const request: WorkerStartRequest = { kind: 'start', jobId: 'job', operation: 'test', inputs: [{ name: 'input', buffer }], options: {} }
+    const cover = new Uint8Array([4, 5]).buffer
+    const request: WorkerStartRequest = { kind: 'start', jobId: 'job', operation: 'test', inputs: [{ name: 'input', buffer }, { name: 'cover.webp', buffer: cover }], options: {} }
     structuredClone(request, { transfer: requestTransferables(request) })
+    expect(buffer.byteLength).toBe(0)
+    expect(cover.byteLength).toBe(0)
+  })
+
+  it('transfiere resultados multimedia sin clonarlos', () => {
+    const buffer = new Uint8Array([1, 2, 3]).buffer
+    const results = [{ name: 'salida.mp4', mime: 'video/mp4', buffer, sizeBytes: 3 }]
+    structuredClone(results, { transfer: resultTransferables(results) })
     expect(buffer.byteLength).toBe(0)
   })
 })

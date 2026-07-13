@@ -48,7 +48,11 @@ export function ConversionCard({ entry }: { entry: FileEntry }) {
       } else if (converter.id === 'audio-convert') { options.format = selectedTarget; options.sourceExtension = entry.detectedType.extension }
       else if (converter.id === 'mp3-to-mp4') {
         options.generateWaveform = visual === 'waveform'
-        if (cover) options.cover = await cover.arrayBuffer()
+        if (cover) {
+          options.cover = await cover.arrayBuffer()
+          options.coverName = cover.name
+          options.coverMime = cover.type
+        }
       } else if (selectedTarget) options.target = selectedTarget
       const results = await converter.convert(entry.file, setProgress, options, controller.signal)
       setDownloads(results.map((result) => ({ url: URL.createObjectURL(new Blob([result.buffer], { type: result.mime })), name: result.name, preview: result.previewKind })))
