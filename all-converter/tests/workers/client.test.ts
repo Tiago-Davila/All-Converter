@@ -30,6 +30,9 @@ describe('cliente worker', () => {
     expect(progress).toHaveBeenCalledWith({ percent: 25, stage: 'Leyendo' })
     expect(worker.terminate).toHaveBeenCalledTimes(1)
     expect(worker.posted[0].transfer).toHaveLength(1)
+    expect(worker.onmessage).toBeNull()
+    expect(worker.onerror).toBeNull()
+    expect(worker.onmessageerror).toBeNull()
   })
 
   it('rechaza mensajes error y errores de ejecución', async () => {

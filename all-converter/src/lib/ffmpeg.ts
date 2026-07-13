@@ -43,7 +43,11 @@ export async function downloadFfmpegAssets(mode: FfmpegMode, onProgress: (percen
       if (!response.ok || !response.body) throw new Error(`No se pudo descargar ${key} de ffmpeg.`)
       const total = Number(response.headers.get('content-length')) || 0
       const reader = response.body.getReader(); const chunks: Uint8Array[] = []; let loaded = 0
-      while (true) { const { done, value } = await reader.read(); if (done) break; chunks.push(value); loaded += value.byteLength; const fraction = total > 0 ? Math.min(1, loaded / total) : 0; onProgress(Math.round(((index + fraction) / entries.length) * 100)) }
+      try {
+        while (true) { const { done, value } = await reader.read(); if (done) break; chunks.push(value); loaded += value.byteLength; const fraction = total > 0 ? Math.min(1, loaded / total) : 0; onProgress(Math.round(((index + fraction) / entries.length) * 100)) }
+      } finally {
+        reader.releaseLock()
+      }
       const blobUrl = URL.createObjectURL(new Blob(chunks.map((chunk) => chunk.slice().buffer as ArrayBuffer), { type: response.headers.get('content-type') ?? 'application/octet-stream' }))
       urls.push(blobUrl); downloaded[key] = blobUrl; onProgress(Math.round(((index + 1) / entries.length) * 100))
     }

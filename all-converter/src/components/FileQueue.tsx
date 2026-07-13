@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ConversionResult, FileEntry } from '../converters/types'
 import { getAvailableConverters, getConverterTargets } from '../converters/registry'
 import { exceedsFileLimit, fileLimitMessage } from '../lib/file-limits'
@@ -18,6 +18,14 @@ export function FileQueue({ entries }: { entries: readonly FileEntry[] }) {
   const [running, setRunning] = useState(false)
   const [zipUrl, setZipUrl] = useState<string>()
   const abortRef = useRef<AbortController | null>(null)
+  const zipUrlRef = useRef<string | undefined>(undefined)
+
+  useEffect(() => () => {
+    abortRef.current?.abort()
+    if (zipUrlRef.current) URL.revokeObjectURL(zipUrlRef.current)
+  }, [])
+
+  useEffect(() => { zipUrlRef.current = zipUrl }, [zipUrl])
 
   const converter = available.find((candidate) => candidate.id === converterId) ?? available[0]
   const targets = converter ? getConverterTargets(converter, ready[0].detectedType) : []
