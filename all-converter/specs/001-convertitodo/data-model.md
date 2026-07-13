@@ -17,6 +17,8 @@ detectando → rechazado
 cancelado → listo
 ```
 
-Rechazos: tipo, 0 bytes, límite, formato diferente o excedente. Fallos conservan mensaje; lote conserva resultados completados.
+Rechazos *(enmendado 2026-07-13)*: tipo no soportado, 0 bytes, límite de tamaño, o excedente del tope de 10. **Ya NO se rechaza por "formato diferente al del lote"**. Fallos conservan mensaje; lote conserva resultados completados.
 
-Canal: `start` y `cancel` del main; `progress`, `result` y `error` del worker. Entrada/salida son `ArrayBuffer` transferidos. Invariantes: validar límite antes del trabajo, 10 homogéneos por lote, preservar ruta relativa en ZIP, y nunca cachear/enviar archivos de usuario.
+Cada entrada de la cola lleva su **propio formato destino** *(enmendado 2026-07-13)*, elegido entre los destinos que el registry declara válidos para su tipo detectado. Una entrada sin destino elegido no se convierte y no bloquea al resto.
+
+Canal: `start` y `cancel` del main; `progress`, `result` y `error` del worker. Entrada/salida son `ArrayBuffer` transferidos. Invariantes: validar límite antes del trabajo, **hasta 10 archivos por lote (formatos mezclados permitidos)**, preservar ruta relativa en ZIP, y nunca cachear/enviar archivos de usuario.

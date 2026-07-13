@@ -35,7 +35,7 @@ Crear tipos/registry/detección, cola y componentes; workers por dominio; conver
 
 ### Fase 2: lote y carpetas
 
-Recorrido recursivo con `relativePath`; máximo 10 homogéneos; scheduler de dos trabajos; cancelación/fallo parcial; JSZip replica rutas. Trazabilidad: US4 y FR-023–FR-028.
+Recorrido recursivo con `relativePath`; máximo 10 archivos, **formatos mezclados permitidos**, con **formato destino por archivo** *(enmendado 2026-07-13)*; scheduler de dos trabajos; cancelación/fallo parcial; JSZip replica rutas. Trazabilidad: US4 y FR-023–FR-028 (incl. FR-023b/FR-023c).
 
 ### Fase 3: media y PWA
 

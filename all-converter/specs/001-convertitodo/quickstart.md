@@ -14,7 +14,7 @@ single-thread con el aviso definido.
 | Imagen/PDF | PNG↔JPG/WebP (calidad, dimensiones y preview); imágenes→PDF; PDF→imagen/TXT/DOCX; unir, dividir y rotar. |
 | Office | XLSX↔CSV/JSON tabular, XLSX/CSV→PDF, DOCX→PDF/TXT/HTML/XLSX; multihoja y tablas sin pérdida. |
 | Media | MP4→MP3, MP3→MP4 con portada o waveform, MP3↔WAV/OGG/M4A; indicador de carga de motor separado. |
-| Lote | Carpeta con subcarpetas: 10 homogéneos, rechazos con motivo, progreso/fallo parcial y ZIP con rutas relativas. |
+| Lote | Carpeta con subcarpetas: hasta 10 archivos de **tipos mezclados**, cada uno con su **formato destino propio**; rechazos con motivo (no soportado, vacío, tamaño, excedente), progreso/fallo parcial y ZIP con rutas relativas. |
 | Cancelación | Cancelar trabajo/lote: pendientes y curso paran, completados se conservan y entrada vuelve a listo <1 s. |
 | Privacidad/offline | Network no contiene archivos/telemetría; sin red, conversión ya cargada funciona. |
 | Bordes | 0 bytes, corrupto, protegido, escaneado, sin audio, sin tablas, tipo falso y exceso de límite tienen mensaje específico y sin salida engañosa. |
