@@ -1,26 +1,34 @@
 <!--
 Sync Impact Report
 ==================
-Version change: (template, sin versión) → 1.0.0
-Ratificación inicial de la constitución del proyecto ConvertiTodo.
+Version change: 1.0.0 → 1.1.0 (MINOR: cinco principios nuevos, ninguno removido ni
+redefinido de forma incompatible).
 
-Modified principles: N/A (creación inicial; se reemplazaron todos los placeholders
-del template por 11 principios concretos provistos por el propietario del proyecto).
+Modified principles: ninguno. Los principios I–XI se mantienen intactos, con su
+redacción y su numeración original (privacidad absoluta, client-side, registry de
+conversores, Web Workers, carga diferida, magic bytes, TypeScript estricto, tests con
+fixtures, honestidad en la UI, límites de tamaño, sin código fuera de fase).
 
 Added sections:
-- Core Principles (I–XI)
-- Restricciones Técnicas
-- Flujo de Trabajo y Puertas de Calidad
-- Governance
+- Principio XII — Accesibilidad no negociable
+- Principio XIII — El sonido es complementario, nunca portador único
+- Principio XIV — Rendimiento percibido y fondo animado
+- Principio XV — Honestidad de la interfaz (reafirma el Principio IX en la capa visual)
+- Principio XVI — Sonido y animaciones sin telemetría
+- Restricciones Técnicas: subsección "Capa de experiencia (UI, sonido, shaders)"
+- Flujo de Trabajo: puertas de merge (5), (6) y (7) para la capa de experiencia
 
-Removed sections: ninguna (se eliminaron solo los comentarios de ejemplo del template).
+Removed sections: ninguna.
 
 Templates requiring updates:
-- ✅ .specify/templates/plan-template.md — compatible; la sección "Constitution Check"
-  deriva sus gates de este archivo, sin referencias hardcodeadas.
+- ✅ .specify/templates/plan-template.md — compatible sin cambios; su "Constitution
+  Check" deriva los gates de este archivo y no hardcodea principios.
 - ✅ .specify/templates/spec-template.md — compatible; sin referencias a principios.
 - ✅ .specify/templates/tasks-template.md — compatible; sin referencias a principios.
-- ✅ CLAUDE.md — ya refleja estos principios en "Reglas duras"; sin cambios necesarios.
+- ✅ .specify/templates/constitution-template.md — es el template base; no se modifica.
+- ⚠ CLAUDE.md — NO existe actualmente en el repositorio (el reporte de la v1.0.0 lo
+  daba por presente). Si se crea, DEBE reflejar los principios XII–XVI en sus reglas
+  duras.
 
 Follow-up TODOs: ninguno.
 -->
@@ -139,6 +147,82 @@ implementación, una tarea por diff por commit.
 **Racional**: mezclar diseño e implementación invalida el proceso Spec-Driven: el
 código escrito antes de tiempo condiciona la spec en vez de derivarse de ella.
 
+### XII. Accesibilidad no negociable
+
+- **Contraste**: todo texto y todo componente de UI DEBE cumplir WCAG 2.1 nivel AA:
+  4.5:1 para texto normal, 3:1 para texto grande (≥24px, o ≥18.66px en negrita) y 3:1
+  para componentes de UI y elementos gráficos que transmitan información (bordes de
+  campos, íconos de estado, indicadores de foco).
+- **Nada solo por color**: ningún estado se comunica ÚNICAMENTE por color. Cada estado
+  (`pending`, `converting`, `done`, `error`, `prep`) DEBE tener además al menos un
+  diferenciador no cromático: ícono, forma o texto propio. Un usuario en escala de
+  grises debe poder distinguir los cinco estados sin ambigüedad.
+- **Teclado**: todo control operable con mouse DEBE ser operable con teclado, con orden
+  de tabulación lógico y foco visible que cumpla el contraste 3:1. No se elimina el
+  outline de foco sin reemplazarlo por un indicador equivalente o mejor.
+
+**Racional**: una app que procesa los archivos de cualquiera debe ser usable por
+cualquiera; el color y el mouse son canales que no todos los usuarios tienen.
+
+### XIII. El sonido es complementario, nunca portador único
+
+- **Redundancia obligatoria**: todo evento sonoro DEBE tener un equivalente visual
+  simultáneo. Ninguna información existe solo en el canal de audio.
+- **Silencio por defecto**: el sonido está desactivado por defecto o respeta la
+  preferencia del sistema. Nunca suena sin que el usuario lo haya habilitado
+  explícita o implícitamente vía esa preferencia.
+- **Control y persistencia**: existe un control de silencio claro, alcanzable por
+  teclado y rotulado; la preferencia persiste entre sesiones (almacenamiento local del
+  navegador, coherente con el Principio II).
+- **Menos estímulo**: bajo `prefers-reduced-motion: reduce` NO se reproducen sonidos,
+  como equivalente auditivo de la reducción de movimiento.
+
+**Racional**: el audio es un canal que muchos usuarios no perciben, no habilitan o no
+toleran; usarlo como único portador de información excluye y molesta.
+
+### XIV. Rendimiento percibido y fondo animado
+
+- **Nunca bloquea**: el fondo animado (shader WebGL) NO bloquea ni retrasa la
+  interacción. Su carga y ejecución nunca compiten con una conversión en curso ni con
+  la respuesta del main thread (coherente con el Principio IV).
+- **Degradación con gracia**: si WebGL no está disponible o falla, la app cae a un
+  fondo estático equivalente sin error visible ni pérdida de funcionalidad.
+- **Se detiene o simplifica**: bajo `prefers-reduced-motion: reduce` y cuando la
+  pestaña no está visible (`document.hidden`), la animación se detiene o se simplifica.
+- **No compite con el contenido**: el texto DEBE permanecer legible por encima del
+  fondo en todo momento, cumpliendo el contraste del Principio XII contra el peor
+  fotograma de la animación, no contra un fotograma favorable.
+
+**Racional**: la estética no puede pagarse con la interacción; un fondo bonito que
+tironea la UI o vuelve ilegible el texto es un defecto, no una función.
+
+### XV. Honestidad de la interfaz
+
+Reafirma el Principio IX en la capa visual, con reglas verificables:
+
+- **Antes, no después**: las limitaciones se comunican ANTES de convertir, no en el
+  error posterior. Como mínimo: fidelidad parcial en DOCX↔PDF, límite de tamaño del
+  conversor elegido, requisito de imagen en MP3→MP4, y aviso de motor pesado en la
+  primera carga de una conversión que descarga WASM.
+- **Ninguna promesa falsa**: ninguna acción primaria promete un resultado que la
+  implementación no entrega.
+- **Fuera de alcance, deshabilitado**: las funciones no implementadas (p. ej. OCR) se
+  muestran deshabilitadas y rotuladas como "próximamente". NUNCA se presentan como
+  acción activa que luego falla o no hace nada.
+
+**Racional**: una limitación anunciada es una característica del producto; la misma
+limitación descubierta después de esperar una conversión es una traición.
+
+### XVI. Sonido y animaciones sin telemetría
+
+Todos los assets de audio y todos los shaders son LOCALES, servidos desde el bundle.
+Sin CDN en runtime, sin fetch a terceros, sin telemetría ni analytics de interacción
+sonora o visual. Esta regla es una extensión del Principio II y hereda su carácter no
+negociable: ninguna mejora estética justifica una petición a un tercero.
+
+**Racional**: la privacidad no admite excepciones "menores"; un pedido a un CDN por un
+sonido filtra IP y hábitos de uso igual que uno por un archivo, y además rompe COEP.
+
 ## Restricciones Técnicas
 
 - **Stack fijo**: React 19 + Vite + TypeScript estricto + Tailwind CSS v4; Vitest para
@@ -152,16 +236,35 @@ código escrito antes de tiempo condiciona la spec en vez de derivarse de ella.
   desactualizada); esto es una fuente de instalación, no un recurso de runtime.
 - **Dependencias nuevas**: no se agregan sin justificarlas primero.
 
+### Capa de experiencia (UI, sonido, shaders)
+
+- **Assets locales**: audio y shaders viven en el repositorio y se sirven desde el
+  bundle. Cualquier URL de tercero en runtime es una violación del Principio XVI (y
+  además la bloquea COEP).
+- **Presupuesto**: los assets de audio y el código del shader entran en el presupuesto
+  de bundle del Principio V. El audio se carga de forma diferida y solo si el usuario
+  habilitó el sonido.
+- **Preferencias del usuario**: `prefers-reduced-motion` y la preferencia de sonido se
+  leen en un único lugar y se respetan en toda la app; el estado de sonido persiste en
+  `localStorage`, nunca en un servidor.
+
 ## Flujo de Trabajo y Puertas de Calidad
 
 - **Fuente de verdad**: `specs/001-convertitodo/` (spec, plan, data-model, tasks). No
   se modifica durante la implementación.
 - **Commits**: chicos y descriptivos, con conventional commits (feat, fix, test,
   chore). Una tarea, un diff, un commit.
-- **Puertas de merge**: (1) trazabilidad a una tarea de tasks.md (Principio I),
-  (2) test con fixture real (Principio VIII), (3) TypeScript estricto sin `any` no
-  justificado (Principio VII), (4) verificación del tamaño de chunks en
-  `npm run build` (Principio V).
+- **Puertas de merge**:
+  1. Trazabilidad a una tarea de tasks.md (Principio I).
+  2. Test con fixture real (Principio VIII).
+  3. TypeScript estricto sin `any` no justificado (Principio VII).
+  4. Verificación del tamaño de chunks en `npm run build` (Principio V).
+  5. Contraste AA verificado y ningún estado distinguible solo por color; todo control
+     nuevo alcanzable y operable por teclado con foco visible (Principio XII).
+  6. Todo evento sonoro nuevo tiene equivalente visual, respeta el silencio por defecto
+     y `prefers-reduced-motion` (Principios XIII y XIV).
+  7. Ningún asset de audio, shader o font referencia un origen externo en runtime
+     (Principios II y XVI).
 - **Verificación local de headers**: `npm run preview` para validar COOP/COEP antes de
   deploy.
 
@@ -182,4 +285,4 @@ proyecto, incluido CLAUDE.md, que debe mantenerse consistente con ella.
   tras el diseño. Toda violación debe justificarse explícitamente en la sección
   "Complexity Tracking" del plan o rechazarse.
 
-**Version**: 1.0.0 | **Ratified**: 2026-07-12 | **Last Amended**: 2026-07-12
+**Version**: 1.1.0 | **Ratified**: 2026-07-12 | **Last Amended**: 2026-07-13
