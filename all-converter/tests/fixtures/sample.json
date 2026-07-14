@@ -1,0 +1,5 @@
+[
+  { "nombre": "Ada", "rol": "ingeniera", "anio": 1843 },
+  { "nombre": "Grace", "rol": "almirante", "anio": 1952 },
+  { "nombre": "Hedy", "rol": "inventora", "anio": 1942 }
+]

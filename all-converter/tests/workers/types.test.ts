@@ -1,0 +1,58 @@
+import { describe, expect, it } from 'vitest'
+import type { WorkerRequest, WorkerResponse, WorkerStartRequest } from '../../src/workers/types'
+import { requestTransferables, resultTransferables } from '../../src/workers/worker-utils'
+
+describe('canal tipado de workers', () => {
+  it('transporta múltiples entradas sin buffers dentro de options', () => {
+    const audio = new ArrayBuffer(4)
+    const cover = new ArrayBuffer(8)
+    const request: WorkerStartRequest = {
+      kind: 'start', jobId: 'job-1', operation: 'mp3-to-mp4',
+      inputs: [{ name: 'audio.mp3', buffer: audio }, { name: 'cover.png', buffer: cover, mime: 'image/png' }],
+      options: { generateWaveform: false, bitrate: 192 },
+    }
+    expect(requestTransferables(request)).toEqual([audio, cover])
+  })
+
+  it('elimina buffers duplicados de la lista de transferibles', () => {
+    const buffer = new ArrayBuffer(1)
+    const request: WorkerStartRequest = { kind: 'start', jobId: 'job-1', operation: 'merge', inputs: [{ name: 'a', buffer }, { name: 'b', buffer }], options: {} }
+    expect(requestTransferables(request)).toEqual([buffer])
+  })
+
+  it('define cancelación, progreso, resultado y error como mensajes discriminados', () => {
+    const cancel: WorkerRequest = { kind: 'cancel', jobId: 'job-1' }
+    const responses: WorkerResponse[] = [
+      { kind: 'progress', jobId: 'job-1', progress: { percent: 50, stage: 'Procesando' } },
+      { kind: 'result', jobId: 'job-1', results: [] },
+      { kind: 'error', jobId: 'job-1', message: 'Falló' },
+    ]
+    expect(cancel.kind).toBe('cancel')
+    expect(responses.map((response) => response.kind)).toEqual(['progress', 'result', 'error'])
+  })
+
+  it('transfiere todos los buffers de salida', () => {
+    const first = new ArrayBuffer(2)
+    const second = new ArrayBuffer(3)
+    expect(resultTransferables([
+      { name: 'a', mime: 'text/plain', buffer: first, sizeBytes: 2 },
+      { name: 'b', mime: 'text/plain', buffer: second, sizeBytes: 3 },
+    ])).toEqual([first, second])
+  })
+
+  it('los transferibles se entregan sin copia', () => {
+    const buffer = new Uint8Array([1, 2, 3]).buffer
+    const cover = new Uint8Array([4, 5]).buffer
+    const request: WorkerStartRequest = { kind: 'start', jobId: 'job', operation: 'test', inputs: [{ name: 'input', buffer }, { name: 'cover.webp', buffer: cover }], options: {} }
+    structuredClone(request, { transfer: requestTransferables(request) })
+    expect(buffer.byteLength).toBe(0)
+    expect(cover.byteLength).toBe(0)
+  })
+
+  it('transfiere resultados multimedia sin clonarlos', () => {
+    const buffer = new Uint8Array([1, 2, 3]).buffer
+    const results = [{ name: 'salida.mp4', mime: 'video/mp4', buffer, sizeBytes: 3 }]
+    structuredClone(results, { transfer: resultTransferables(results) })
+    expect(buffer.byteLength).toBe(0)
+  })
+})

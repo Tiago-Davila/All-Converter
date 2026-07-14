@@ -1,0 +1,1 @@
+export function PrivacyNotice() { return <aside aria-label="Privacidad"><strong>Tus archivos no salen de tu dispositivo.</strong><p>Todo se procesa localmente, sin telemetría ni servidores.</p></aside> }

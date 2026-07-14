@@ -1,0 +1,58 @@
+/**
+ * Scrim y tema oscuro base (research.md §D1, §D2; Constitución Principios XII y XIV).
+ *
+ * El contenido NUNCA se dibuja directamente sobre el fondo animado: siempre va sobre
+ * una superficie (scrim) con alfa >= 0.85, que es lo que garantiza contraste AA
+ * "en el peor fotograma" de forma determinista (FR-007 / SC-002). Sin CDN: sin
+ * @import remoto, sin fuentes de Google Fonts (COEP require-corp las bloquearía igual).
+ */
+
+:root {
+  --ct-base: #0b0c11;
+  --ct-scrim-alpha: 0.85;
+  --ct-radius-sm: 6px;
+  --ct-radius-md: 10px;
+  --ct-radius-lg: 16px;
+
+  --ct-text-primary: #f2f4f8;
+  --ct-text-secondary: #a8b0c0;
+  --ct-text-muted: #7d8598;
+  --ct-accent-violet: #b39dff;
+  --ct-accent-warm: #ffb37a;
+  --ct-state-pending: #9aa3b5;
+  --ct-state-prep: #ffd479;
+  --ct-state-converting: #7cc4ff;
+  --ct-state-done: #6ee7a8;
+  --ct-state-error: #ff8a8a;
+  --ct-focus-ring: #8b7cf0;
+
+  color-scheme: dark;
+}
+
+body {
+  background: var(--ct-base);
+  color: var(--ct-text-primary);
+}
+
+/**
+ * Superficie que aísla el contenido del fondo animado. Todo texto y control vive
+ * dentro de un elemento con esta clase (o equivalente), nunca directamente sobre
+ * el canvas del shader.
+ */
+.ui-surface {
+  position: relative;
+  background-color: color-mix(in srgb, var(--ct-base) calc(var(--ct-scrim-alpha) * 100%), transparent);
+  border-radius: var(--ct-radius-md);
+}
+
+/**
+ * Foco visible global (Principio XII / FR-041): todo control operable con teclado
+ * recibe este anillo. focus-ring cumple 3:1 contra SURFACE (verificado en T004).
+ * Ningún componente MUST NOT quitar el outline sin reemplazarlo por un indicador
+ * equivalente o mejor: si hace falta un estilo de foco distinto, se reemplaza esta
+ * regla de forma explícita, nunca con `outline: none` suelto (ver focus.test.tsx).
+ */
+:focus-visible {
+  outline: 2px solid var(--ct-focus-ring);
+  outline-offset: 2px;
+}
