@@ -12,13 +12,13 @@ export function StaticBackground(): React.ReactElement {
       aria-hidden="true"
       data-testid="static-background"
       style={{
-        position: 'fixed',
+        position: 'absolute',
         inset: 0,
         width: '100%',
         height: '100%',
         pointerEvents: 'none',
-        zIndex: -1,
-        background: 'radial-gradient(ellipse 80% 80% at 38% 32%, #5b5bd6 0%, #7b7bef 30%, #0b0c11 100%)',
+        zIndex: 0,
+        background: 'radial-gradient(120% 90% at 30% 10%, #2b2350 0%, #5b5bd6 40%, #0b0c11 100%)',
       }}
     />
   )

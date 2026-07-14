@@ -18,15 +18,17 @@ async function expectMp4(page: Page) {
 
 test('FIX027 convierte MP3 a MP4 con portada real', async ({ page }) => {
   await uploadAudio(page)
+  await page.locator('select.ct-select').first().selectOption('mp3-to-mp4::mp4')
   await page.getByLabel('Usar portada').check()
   await page.getByLabel('Imagen de portada').setInputFiles(fixture('sample.png'))
-  await page.getByRole('button', { name: 'Convertir', exact: true }).click()
+  await page.getByRole('button', { name: 'Convertir todos' }).click()
   await expectMp4(page)
 })
 
 test('FIX027 convierte MP3 a MP4 con waveform generado', async ({ page }) => {
   await uploadAudio(page)
+  await page.locator('select.ct-select').first().selectOption('mp3-to-mp4::mp4')
   await page.getByLabel('Generar waveform').check()
-  await page.getByRole('button', { name: 'Convertir', exact: true }).click()
+  await page.getByRole('button', { name: 'Convertir todos' }).click()
   await expectMp4(page)
 })

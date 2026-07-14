@@ -7,8 +7,8 @@ const sample = path.resolve('tests/fixtures/sample.png')
 
 async function convertImage(page: import('@playwright/test').Page) {
   await page.locator('input[type=file]').first().setInputFiles(sample)
-  await page.getByLabel('Formato destino').selectOption('jpg')
-  await page.getByRole('button', { name: 'Convertir', exact: true }).click()
+  await page.locator('select.ct-select').first().selectOption('image-convert::jpg')
+  await page.getByRole('button', { name: 'Convertir todos' }).click()
   await expect(page.getByRole('link', { name: /Descargar .*\.jpg/ })).toBeVisible()
 }
 

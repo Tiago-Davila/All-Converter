@@ -12,27 +12,10 @@
 import { describe, it, expect } from 'vitest'
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { createGunzip } from 'node:zlib'
-import { createReadStream } from 'node:fs'
-import { pipeline } from 'node:stream/promises'
-import { Writable } from 'node:stream'
+import { fileURLToPath } from 'node:url'
 
-const ROOT = new URL('../../', import.meta.url).pathname.replace(/\/$/, '')
+const ROOT = fileURLToPath(new URL('../../', import.meta.url)).replace(/[\\/]$/, '')
 const DIST_ASSETS = join(ROOT, 'dist/assets')
-
-/** Lee el tamaño gzip de un archivo de forma síncrona aproximada: lee el campo de tamaño
- * en el header gzip (bytes 4-7) — válido para streams < 4 GB. */
-async function gzipSize(filePath: string): Promise<number> {
-  let totalBytes = 0
-  const writable = new Writable({
-    write(chunk, _enc, cb) {
-      totalBytes += (chunk as Buffer).length
-      cb()
-    },
-  })
-  await pipeline(createReadStream(filePath), createGunzip(), writable)
-  return totalBytes
-}
 
 describe('Presupuesto de bundle (T044)', () => {
   it('el directorio dist/assets existe (build completado)', () => {

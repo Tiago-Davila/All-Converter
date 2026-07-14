@@ -6,9 +6,12 @@ const fixture = (name: string) => path.resolve('tests/fixtures', name)
 async function convert(page: Page, input: string | { name: string; mimeType: string; buffer: Buffer }, target: string, maxWidth?: number) {
   await page.goto('/')
   await page.locator('input[type=file]').first().setInputFiles(input)
-  await page.getByLabel('Formato destino').selectOption(target)
-  if (maxWidth) await page.getByLabel('Ancho máximo').fill(String(maxWidth))
-  await page.getByRole('button', { name: 'Convertir', exact: true }).click()
+  await page.locator('select.ct-select').first().selectOption(`image-convert::${target}`)
+  if (maxWidth) {
+    await page.getByRole('button', { name: 'Opciones de imagen' }).click()
+    await page.getByLabel('Ancho máximo').fill(String(maxWidth))
+  }
+  await page.getByRole('button', { name: 'Convertir todos' }).click()
   const link = page.getByRole('link', { name: new RegExp(`Descargar .*\\.${target}`) })
   await expect(link).toBeVisible()
   return Buffer.from(await link.evaluate(async (element: HTMLAnchorElement) => [...new Uint8Array(await (await fetch(element.href)).arrayBuffer())]))
@@ -51,6 +54,7 @@ test('FIX029 aplana transparencia sobre blanco al convertir a JPG', async ({ pag
 test('FIX029 rechaza WebP animado real', async ({ page }) => {
   await page.goto('/')
   await page.locator('input[type=file]').first().setInputFiles(fixture('animated.webp'))
-  await page.getByRole('button', { name: 'Convertir', exact: true }).click()
+  await page.locator('select.ct-select').first().selectOption('image-convert::png')
+  await page.getByRole('button', { name: 'Convertir todos' }).click()
   await expect(page.getByRole('alert')).toContainText('animadas no se pueden convertir')
 })

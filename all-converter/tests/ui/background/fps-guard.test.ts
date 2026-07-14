@@ -48,7 +48,7 @@ describe('FpsGuard (T029)', () => {
     const guard = createFpsGuard(30, 2000, 500, onDegrade)
 
     // Warmup: 500 ms a 60 fps
-    let ts = simulateFrames(guard, 60, 500, 0)
+    const ts = simulateFrames(guard, 60, 500, 0)
     // Caída: 2500 ms a 10 fps (bien bajo el umbral)
     simulateFrames(guard, 10, 2500, ts)
 

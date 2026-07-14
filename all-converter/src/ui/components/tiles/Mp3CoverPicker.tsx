@@ -3,7 +3,7 @@
  * Waveform generado por defecto (DEFAULT_COVER). Opción de reemplazar por imagen
  * y de volver al waveform. "Convertir" NUNCA queda bloqueado (FR-028c, T024, US2).
  */
-import React, { useRef, useState } from 'react'
+import React, { useRef } from 'react'
 
 /** Constante que identifica el cover por defecto (waveform generado). */
 export const DEFAULT_COVER = 'default-waveform' as const

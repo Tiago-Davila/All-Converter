@@ -11,7 +11,8 @@ async function upload(page: import('@playwright/test').Page, name: string) {
 
 test('FIX026 convierte MP4 con audio a un MP3 real', async ({ page }) => {
   await upload(page, 'sample.mp4')
-  await page.getByRole('button', { name: 'Convertir', exact: true }).click()
+  await page.locator('select.ct-select').first().selectOption('mp4-to-mp3::mp3')
+  await page.getByRole('button', { name: 'Convertir todos' }).click()
   const link = page.getByRole('link', { name: /Descargar .*\.mp3/ })
   await expect(link).toBeVisible()
   const bytes = await link.evaluate(async (element: HTMLAnchorElement) => [...new Uint8Array(await (await fetch(element.href)).arrayBuffer()).slice(0, 4)])
@@ -21,6 +22,7 @@ test('FIX026 convierte MP4 con audio a un MP3 real', async ({ page }) => {
 
 test('FIX026 rechaza MP4 sin pista de audio', async ({ page }) => {
   await upload(page, 'silent.mp4')
-  await page.getByRole('button', { name: 'Convertir', exact: true }).click()
+  await page.locator('select.ct-select').first().selectOption('mp4-to-mp3::mp3')
+  await page.getByRole('button', { name: 'Convertir todos' }).click()
   await expect(page.getByRole('alert')).toContainText('no contiene pista de audio')
 })

@@ -3,13 +3,12 @@ import path from 'node:path'
 
 const mp3Path = path.resolve('tests/fixtures/sample.mp3')
 
-async function convert(page: Page, input: string | { name: string; mimeType: string; buffer: Buffer }, target?: string) {
+async function convert(page: Page, input: string | { name: string; mimeType: string; buffer: Buffer }, target = 'mp3') {
   await page.goto('/')
   await page.locator('input[type=file]').first().setInputFiles(input)
-  await page.getByLabel('Conversión').selectOption('audio-convert')
-  if (target) await page.getByLabel('Formato destino').selectOption(target)
-  await page.getByRole('button', { name: 'Convertir', exact: true }).click()
-  const link = page.getByRole('link', { name: /Descargar/ })
+  await page.locator('select.ct-select').first().selectOption(`audio-convert::${target}`)
+  await page.getByRole('button', { name: 'Convertir todos' }).click()
+  const link = page.getByRole('link', { name: new RegExp(`Descargar .*\\.${target}`) })
   await expect(link).toBeVisible()
   return Buffer.from(await link.evaluate(async (element: HTMLAnchorElement) => [...new Uint8Array(await (await fetch(element.href)).arrayBuffer())]))
 }

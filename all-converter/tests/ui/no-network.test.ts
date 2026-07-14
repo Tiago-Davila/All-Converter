@@ -10,8 +10,9 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, extname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const ROOT = new URL('../../', import.meta.url).pathname.replace(/\/$/, '')
+const ROOT = fileURLToPath(new URL('../../', import.meta.url)).replace(/[\\/]$/, '')
 const SRC_DIR = join(ROOT, 'src')
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

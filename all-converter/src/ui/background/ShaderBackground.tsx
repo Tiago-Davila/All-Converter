@@ -1,9 +1,11 @@
 /**
- * ShaderBackground: canvas WebGL2 decorativo para el fondo animado (T028, US3).
+ * ShaderBackground: canvas WebGL2 decorativo del hero (T028, US3).
  *
  * - pointer-events: none → nunca bloquea la UI (invariante 1)
- * - Resolución reducida ~0.75× DPR para rendimiento
- * - Loop rAF interpola intensidad hacia el objetivo (targetFor)
+ * - Se posiciona absolute para llenar a su contenedor (el hero del mockup)
+ * - Loop rAF interpola intensidad hacia el objetivo (targetFor) leyendo refs,
+ *   así los cambios de props llegan al loop sin re-crear el contexto
+ * - El brillo sigue al cursor vía focusRef (FR-003) sin re-renders por mousemove
  * - Se degrada a StaticBackground ante: sin WebGL2, webglcontextlost, reduce-motion
  * - Se pausa con document.hidden (T031)
  * - El warmup descarta los primeros ~500 ms del guard de FPS (T029)
@@ -14,14 +16,16 @@ import { StaticBackground } from './StaticBackground'
 import { createFpsGuard } from './fps-guard'
 
 const WARMUP_MS = 500
-const LERP_SPEED = 3.5   // factor de interpolación por segundo
+const LERP_SPEED = 3.5 // factor de interpolación por segundo
 
 export interface ShaderBackgroundProps {
   /** Intensidad objetivo [0,1] — viene de targetFor(). */
   targetIntensity: number
-  /** 1 si el puntero está sobre la zona de drop. */
-  focusValue?: number
+  /** Posición del cursor en UV [0,1] (origen abajo-izquierda). Mutable, sin re-render. */
+  focusRef?: React.RefObject<readonly [number, number]>
 }
+
+const DEFAULT_FOCUS: readonly [number, number] = [0.5, 0.42]
 
 function compileShader(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader {
   const shader = gl.createShader(type)!
@@ -48,10 +52,14 @@ function buildProgram(gl: WebGL2RenderingContext): WebGLProgram {
 
 export function ShaderBackground({
   targetIntensity,
-  focusValue = 0,
+  focusRef,
 }: ShaderBackgroundProps): React.ReactElement {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [degraded, setDegraded] = useState(false)
+
+  // Los valores vivos se leen desde el loop vía ref: sin stale closures.
+  const liveRef = useRef({ targetIntensity })
+  liveRef.current.targetIntensity = targetIntensity
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -86,12 +94,11 @@ export function ShaderBackground({
     const uTime  = gl.getUniformLocation(program, 'u_time')
     const uInt   = gl.getUniformLocation(program, 'u_int')
     const uFocus = gl.getUniformLocation(program, 'u_focus')
-    const uWarm  = gl.getUniformLocation(program, 'u_warm')
 
     gl.useProgram(program)
 
     let rafId: number
-    let currentIntensity = targetIntensity
+    let currentIntensity = liveRef.current.targetIntensity
     let startTs: number | null = null
     let lastTs = 0
     let paused = false
@@ -106,8 +113,8 @@ export function ShaderBackground({
       // canvas y gl son no-nulos aquí: pasamos por los guards anteriores
       const c = canvas as HTMLCanvasElement
       const g = gl as WebGL2RenderingContext
-      c.width  = Math.round(c.clientWidth  * scale)
-      c.height = Math.round(c.clientHeight * scale)
+      c.width  = Math.max(2, Math.round(c.clientWidth  * scale))
+      c.height = Math.max(2, Math.round(c.clientHeight * scale))
       g.viewport(0, 0, c.width, c.height)
     }
 
@@ -127,18 +134,18 @@ export function ShaderBackground({
       const dt = Math.min((ts - lastTs) / 1000, 0.1)
       lastTs = ts
 
-      // Interpolar intensidad hacia el objetivo
-      currentIntensity += (targetIntensity - currentIntensity) * Math.min(LERP_SPEED * dt, 1)
-
-      const warmup = elapsed < WARMUP_MS ? 1.0 : 0.0
+      // Interpolar intensidad hacia el objetivo vivo
+      currentIntensity +=
+        (liveRef.current.targetIntensity - currentIntensity) * Math.min(LERP_SPEED * dt, 1)
 
       fpsGuard.tick(ts)
+
+      const focus = focusRef?.current ?? DEFAULT_FOCUS
 
       g.uniform2f(uRes, c.width, c.height)
       g.uniform1f(uTime, elapsed / 1000)
       g.uniform1f(uInt, currentIntensity)
-      g.uniform1f(uFocus, focusValue)
-      g.uniform1f(uWarm, warmup)
+      g.uniform2f(uFocus, focus[0], focus[1])
 
       g.drawArrays(g.TRIANGLE_STRIP, 0, 4)
     }
@@ -167,11 +174,8 @@ export function ShaderBackground({
       ro.disconnect()
       fpsGuard.destroy()
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Propagar cambios de targetIntensity y focusValue al loop sin re-mount
-  // (se leen por closure; el efecto se ejecuta solo al montar)
   if (degraded) {
     return <StaticBackground />
   }
@@ -182,12 +186,12 @@ export function ShaderBackground({
       aria-hidden="true"
       data-testid="shader-background"
       style={{
-        position: 'fixed',
+        position: 'absolute',
         inset: 0,
         width: '100%',
         height: '100%',
         pointerEvents: 'none',
-        zIndex: -1,
+        zIndex: 0,
       }}
     />
   )

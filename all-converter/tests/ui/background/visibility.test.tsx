@@ -10,15 +10,13 @@ import { ShaderBackground } from '../../../src/ui/background/ShaderBackground'
  */
 describe('ShaderBackground — pausa con document.hidden (T031)', () => {
   const rafIds: number[] = []
-  let addEventSpy: ReturnType<typeof vi.spyOn>
-  let removeEventSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
     // Sin WebGL: degrada a estático (simplifica el test)
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
 
-    addEventSpy = vi.spyOn(document, 'addEventListener')
-    removeEventSpy = vi.spyOn(document, 'removeEventListener')
+    vi.spyOn(document, 'addEventListener')
+    vi.spyOn(document, 'removeEventListener')
   })
 
   afterEach(() => {
