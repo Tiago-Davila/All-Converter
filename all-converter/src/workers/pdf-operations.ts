@@ -33,16 +33,30 @@ async function pdfImages(input: WorkerInput, options: WorkerOptions, onProgress:
 }
 
 async function pdfDocx(input: WorkerInput, onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> {
-  const layout = await extractPdfLayout(await openPdf(input), onProgress)
+  // richText: resuelve fuentes (negrita/itálica) y retiene columnas para reconstruir tablas.
+  const layout = await extractPdfLayout(await openPdf(input), onProgress, { richText: true })
   if (!layout.text.trim()) throw new Error(SCANNED_ERROR)
-  const { Document, HeadingLevel, Packer, Paragraph, TextRun } = await import('docx')
-  const paragraphs = inferDocumentBlocks(layout.pages).map((block) => new Paragraph({
-    heading: block.kind === 'heading1' ? HeadingLevel.HEADING_1 : block.kind === 'heading2' ? HeadingLevel.HEADING_2 : undefined,
-    bullet: block.kind === 'list' ? { level: block.level } : undefined,
-    pageBreakBefore: block.pageBreakBefore,
-    children: [new TextRun(block.text)],
-  }))
-  const blob = await Packer.toBlob(new Document({ sections: [{ children: paragraphs }] })); const buffer = await blob.arrayBuffer(); report(onProgress, 100, 'DOCX creado')
+  const { Document, HeadingLevel, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, BorderStyle } = await import('docx')
+  const border = { style: BorderStyle.SINGLE, size: 1, color: '999999' }
+  const tableBorders = { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border }
+  const runsToChildren = (runs: { text: string; bold: boolean; italic: boolean }[]) =>
+    runs.length ? runs.map((run) => new TextRun({ text: run.text, bold: run.bold, italics: run.italic })) : [new TextRun('')]
+  const children = inferDocumentBlocks(layout.pages).map((block) => {
+    if (block.kind === 'table') {
+      return new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        borders: tableBorders,
+        rows: block.rows.map((row) => new TableRow({ children: row.map((cell) => new TableCell({ children: [new Paragraph({ children: [new TextRun(cell)] })] })) })),
+      })
+    }
+    return new Paragraph({
+      heading: block.kind === 'heading1' ? HeadingLevel.HEADING_1 : block.kind === 'heading2' ? HeadingLevel.HEADING_2 : undefined,
+      bullet: block.kind === 'list' ? { level: block.level } : undefined,
+      pageBreakBefore: block.pageBreakBefore,
+      children: runsToChildren(block.runs),
+    })
+  })
+  const blob = await Packer.toBlob(new Document({ sections: [{ children }] })); const buffer = await blob.arrayBuffer(); report(onProgress, 100, 'DOCX creado')
   return [{ name: `${baseName(input.name)}.docx`, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer, sizeBytes: buffer.byteLength }]
 }
 

@@ -4,10 +4,13 @@ import { describe, expect, it, vi } from 'vitest'
 import type { DetectedFileType, FileEntry } from '../../src/converters/types'
 import { FileQueue } from '../../src/components/FileQueue'
 
+const hoisted = vi.hoisted(() => ({ imageCalls: [] as string[] }))
+
 vi.mock('../../src/converters/registry', () => {
   const image = {
     id: 'fake-image', label: 'Convertir imagen', from: ['image'], to: 'jpg|webp', maxSizeMB: 50,
     async convert(file: File, _onProgress: unknown, options: Record<string, unknown>) {
+      hoisted.imageCalls.push(file.name)
       if (file.name === 'malo.png') throw new Error('El archivo parece estar dañado o incompleto.')
       const target = String(options.target)
       return [{ name: file.name.replace(/\.png$/, `.${target}`), mime: `image/${target}`, buffer: new TextEncoder().encode(target).buffer, sizeBytes: 3 }]
@@ -95,5 +98,26 @@ describe('flujo de lote', () => {
   it('no muestra panel de lote sin archivos listos', () => {
     render(<FileQueue entries={[]} />)
     expect(screen.queryByRole('button', { name: 'Convertir todos' })).toBeNull()
+  })
+
+  it('al reconvertir solo procesa los pendientes y preserva lo ya convertido', async () => {
+    hoisted.imageCalls.length = 0
+    const { rerender } = render(<FileQueue entries={[imageEntry('a.png')]} />)
+    chooseTarget('a.png', 'JPG')
+    fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Descargar ZIP' })).toBeTruthy())
+    expect(hoisted.imageCalls).toEqual(['a.png'])
+
+    // Llega un archivo nuevo a la cola (a.png ya está listo).
+    rerender(<FileQueue entries={[imageEntry('a.png'), imageEntry('b.png')]} />)
+    chooseTarget('b.png', 'JPG')
+    const button = screen.getByRole('button', { name: /Convertir pendientes/ })
+    expect(button.textContent).toContain('(1)')
+
+    fireEvent.click(button)
+    await waitFor(() => expect(screen.getByText(/b\.png: completed/)).toBeTruthy())
+    // a.png NO se reconvirtió (sigue una sola llamada) y quedó preservado.
+    expect(hoisted.imageCalls).toEqual(['a.png', 'b.png'])
+    expect(screen.getByText(/a\.png: completed/)).toBeTruthy()
   })
 })

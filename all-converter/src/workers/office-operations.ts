@@ -1,13 +1,12 @@
 import type { ConversionProgress, ConversionResult } from '../converters/types'
 import type { WorkerInput, WorkerOptions } from './types'
 import { decodeCsv, isFlatTabularJson } from './tabular'
+import { htmlToBlocks, parseHtmlTableRows, renderBlocksToPdf, odfContentToBlocks, imageBlockFromBytes, type OdfImageResolver } from './office-doc-render'
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 function progress(callback: (value: ConversionProgress) => void, percent: number, stage: string) { callback({ percent, stage }) }
 function baseName(name: string) { return name.replace(/\.[^.]+$/, '') }
-function decodeEntities(value: string): string { return value.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ') }
-function cellText(html: string): string { return decodeEntities(html.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim() }
 
 async function spreadsheet(input: WorkerInput, options: WorkerOptions, onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> {
   const xlsx = await import('xlsx')
@@ -65,20 +64,38 @@ async function docxText(input: WorkerInput, options: WorkerOptions, onProgress: 
 }
 
 async function docxPdf(input: WorkerInput, onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> {
-  const [mammoth, { jsPDF }] = await Promise.all([import('mammoth'), import('jspdf')]); progress(onProgress, 30, 'Leyendo documento')
+  const mammoth = await import('mammoth'); progress(onProgress, 30, 'Leyendo documento')
   const { value: html } = await mammoth.convertToHtml({ arrayBuffer: input.buffer })
-  const blocks = [...html.matchAll(/<(h1|h2|h3|p|li)[^>]*>([\s\S]*?)<\/\1>/gi)].map((match) => ({ tag: match[1].toLowerCase(), text: cellText(match[2]) })).filter((block) => block.text)
+  const blocks = htmlToBlocks(html)
   if (!blocks.length) throw new Error('El documento no contiene texto extraíble.')
-  const pdf = new jsPDF(); const pageHeight = pdf.internal.pageSize.getHeight(); const textWidth = pdf.internal.pageSize.getWidth() - 30; let y = 20
-  for (const block of blocks) { const size = block.tag === 'h1' ? 18 : block.tag === 'h2' || block.tag === 'h3' ? 14 : 11; pdf.setFontSize(size); pdf.setFont('helvetica', block.tag.startsWith('h') ? 'bold' : 'normal'); const lines: string[] = pdf.splitTextToSize(block.tag === 'li' ? `• ${block.text}` : block.text, textWidth); for (const line of lines) { if (y > pageHeight - 20) { pdf.addPage(); y = 20 } pdf.text(line, 15, y); y += size * 0.5 } y += size * 0.35 }
-  const buffer = pdf.output('arraybuffer'); progress(onProgress, 100, 'PDF creado')
-  return [{ name: `${baseName(input.name)}.pdf`, mime: 'application/pdf', buffer, sizeBytes: buffer.byteLength, previewKind: 'pdf' }]
+  progress(onProgress, 70, 'Componiendo PDF')
+  const result = await renderBlocksToPdf(blocks, baseName(input.name)); progress(onProgress, 100, 'PDF creado')
+  return [result]
+}
+
+async function odtPdf(input: WorkerInput, onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> {
+  const JSZip = (await import('jszip')).default; progress(onProgress, 25, 'Abriendo documento')
+  const zip = await JSZip.loadAsync(input.buffer)
+  const contentFile = zip.file('content.xml')
+  if (!contentFile) throw new Error('El archivo ODT no es válido: falta content.xml.')
+  const xml = await contentFile.async('string'); progress(onProgress, 50, 'Leyendo contenido')
+  const pictures = new Map<string, Uint8Array>()
+  await Promise.all(Object.keys(zip.files).filter((name) => /^Pictures\//i.test(name)).map(async (name) => { pictures.set(name, await zip.files[name].async('uint8array')) }))
+  const resolveImage: OdfImageResolver = (href) => {
+    const bytes = pictures.get(href) ?? pictures.get(href.replace(/^\.?\//, ''))
+    return bytes ? imageBlockFromBytes(bytes, href) : undefined
+  }
+  const blocks = odfContentToBlocks(xml, resolveImage)
+  if (!blocks.length) throw new Error('El documento no contiene texto extraíble.')
+  progress(onProgress, 75, 'Componiendo PDF')
+  const result = await renderBlocksToPdf(blocks, baseName(input.name)); progress(onProgress, 100, 'PDF creado')
+  return [result]
 }
 
 async function docxXlsx(input: WorkerInput, onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> {
   const [mammoth, xlsx] = await Promise.all([import('mammoth'), import('xlsx')]); progress(onProgress, 30, 'Leyendo documento')
   const { value: html } = await mammoth.convertToHtml({ arrayBuffer: input.buffer })
-  const tables = [...html.matchAll(/<table[^>]*>([\s\S]*?)<\/table>/gi)].map((table) => [...table[1].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)].map((row) => [...row[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((cell) => cellText(cell[1]))))
+  const tables = [...html.matchAll(/<table[^>]*>([\s\S]*?)<\/table>/gi)].map((table) => parseHtmlTableRows(table[1]))
   if (!tables.length) throw new Error('El documento no contiene tablas.')
   const workbook = xlsx.utils.book_new(); tables.forEach((rows, index) => xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet(rows), `Tabla${index + 1}`))
   const buffer: ArrayBuffer = xlsx.write(workbook, { type: 'array', bookType: 'xlsx' }); progress(onProgress, 100, 'Completado')
@@ -90,6 +107,7 @@ export async function executeOfficeOperation(operation: string, input: WorkerInp
   if (operation === 'spreadsheet-to-pdf') return spreadsheetPdf(input, onProgress)
   if (operation === 'docx-text') return docxText(input, options, onProgress)
   if (operation === 'docx-to-pdf') return docxPdf(input, onProgress)
+  if (operation === 'odt-to-pdf') return odtPdf(input, onProgress)
   if (operation === 'docx-to-xlsx') return docxXlsx(input, onProgress)
   throw new Error(`Operación Office desconocida: ${operation}.`)
 }
