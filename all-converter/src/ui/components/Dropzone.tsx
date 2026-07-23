@@ -82,6 +82,10 @@ export function Dropzone({
       {background}
       {background && <div className="ct-hero-scrim" aria-hidden="true" />}
 
+      {/* Líneas del dropzone: visibles en reposo; se desvanecen al arrastrar
+          (el velo animado toma el relevo con su propio anillo + blur). */}
+      <span className="ct-hero-frame" aria-hidden="true" />
+
       {!hasFiles && (
         <div className="ct-hero-body">
           <span className="ct-hero-glyph" aria-hidden="true">

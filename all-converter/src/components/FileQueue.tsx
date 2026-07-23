@@ -100,6 +100,8 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity }: FileQ
   const abortRef = useRef<AbortController | null>(null)
   const zipUrlRef = useRef<string | undefined>(undefined)
   const downloadsRef = useRef<Record<string, RowDownload[]>>({})
+  // Resultados crudos por archivo, acumulados entre corridas, para el ZIP "Descargar todo".
+  const resultsRef = useRef<Record<string, { name: string; buffer: ArrayBuffer; relativePath?: string }[]>>({})
 
   useEffect(() => () => {
     abortRef.current?.abort()
@@ -117,25 +119,42 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity }: FileQ
 
   const pending = ready.filter((entry) => !chosen(entry))
   const convertible = ready.filter((entry) => chosen(entry))
+  // Solo se (re)convierte lo que todavía no está listo: no se reprocesa lo ya convertido/compartido.
+  const toConvert = convertible.filter((entry) => items[entry.id]?.state !== 'completed')
+  const alreadyDone = convertible.length - toConvert.length
 
   const updateItem = (id: string, patch: Partial<BatchItem>) => setItems((current) => ({ ...current, [id]: { ...current[id], ...patch } as BatchItem }))
 
+  /** Olvida el resultado y la descarga de un archivo (p. ej. al cambiar su formato destino). */
+  const forgetResult = (id: string) => {
+    delete resultsRef.current[id]
+    setItems((current) => { if (!current[id]) return current; const next = { ...current }; delete next[id]; return next })
+    setDownloads((current) => { if (!current[id]) return current; current[id].forEach((download) => URL.revokeObjectURL(download.url)); const next = { ...current }; delete next[id]; return next })
+    setDownloadedIds((current) => { if (!current[id]) return current; const next = { ...current }; delete next[id]; return next })
+  }
+
   const registerResults = (entry: FileEntry, results: ConversionResult[]) => {
+    resultsRef.current[entry.id] = results.map((result) => ({ name: result.name, buffer: result.buffer, relativePath: entry.relativePath }))
     const rows = results.map((result) => ({ url: URL.createObjectURL(new Blob([result.buffer], { type: result.mime })), name: result.name }))
     setDownloads((current) => ({ ...current, [entry.id]: rows }))
   }
 
   const convertAll = async () => {
-    if (!convertible.length) return
+    if (!toConvert.length) return
     const controller = new AbortController()
     abortRef.current = controller
     setRunning(true)
     setAnnouncement(null)
     setZipUrl((previous) => { if (previous) URL.revokeObjectURL(previous); return undefined })
-    setDownloads((current) => { Object.values(current).flat().forEach((d) => URL.revokeObjectURL(d.url)); return {} })
-    setDownloadedIds({})
-    setItems(Object.fromEntries(convertible.map((entry) => [entry.id, { state: 'queued' } satisfies BatchItem])))
-    const collected: { result: ConversionResult; relativePath?: string }[] = []
+    // Preservar lo ya convertido: solo se limpian y encolan los pendientes.
+    setDownloads((current) => {
+      const next = { ...current }
+      for (const entry of toConvert) { next[entry.id]?.forEach((d) => URL.revokeObjectURL(d.url)); delete next[entry.id] }
+      return next
+    })
+    setDownloadedIds((current) => { const next = { ...current }; for (const entry of toConvert) delete next[entry.id]; return next })
+    for (const entry of toConvert) delete resultsRef.current[entry.id]
+    setItems((current) => { const next = { ...current }; for (const entry of toConvert) next[entry.id] = { state: 'queued' }; return next })
     // Contadores del lote para el sonido y el anuncio consolidados (FR-029c, FR-043)
     let doneCount = 0
     let errorCount = 0
@@ -144,7 +163,7 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity }: FileQ
     // comparten exactamente el mismo destino; el resto se convierte archivo por archivo.
     const groups = new Map<string, { choice: Choice; entries: FileEntry[] }>()
     const singles: FileEntry[] = []
-    for (const entry of convertible) {
+    for (const entry of toConvert) {
       const choice = chosen(entry)
       if (!choice) continue
       if (!choice.converter.convertMany) { singles.push(entry); continue }
@@ -161,7 +180,6 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity }: FileQ
       try {
         const options = await optionsFor(choice, grouped[0], optionsOf(grouped[0]))
         const results = await choice.converter.convertMany!(grouped.map((entry) => entry.file), (progress) => grouped.forEach((entry) => updateItem(entry.id, { percent: progress.percent })), options, controller.signal)
-        results.forEach((result) => collected.push({ result }))
         registerResults(grouped[0], results)
         grouped.forEach((entry) => updateItem(entry.id, { state: 'completed', percent: 100 }))
         doneCount += grouped.length
@@ -181,7 +199,6 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity }: FileQ
       try {
         const options = await optionsFor(choice, entry, optionsOf(entry))
         const results = await choice.converter.convert(entry.file, (progress) => updateItem(entry.id, { percent: progress.percent }), options, controller.signal)
-        results.forEach((result) => collected.push({ result, relativePath: entry.relativePath }))
         registerResults(entry, results)
         updateItem(entry.id, { state: 'completed', percent: 100 })
         doneCount += 1
@@ -191,8 +208,12 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity }: FileQ
       }
     }), singles.length ? concurrency : 2, controller.signal)
 
-    if (collected.length) {
-      const buffer = await createZip(collected.map(({ result, relativePath }) => ({ name: result.name, buffer: result.buffer, relativePath })), controller.signal)
+    // El ZIP incluye TODO lo convertido hasta ahora (corridas previas + esta), no solo este lote.
+    const packaged = Object.entries(resultsRef.current)
+      .filter(([id]) => entries.some((entry) => entry.id === id))
+      .flatMap(([, list]) => list)
+    if (packaged.length) {
+      const buffer = await createZip(packaged, controller.signal)
       setZipUrl(URL.createObjectURL(new Blob([buffer], { type: 'application/zip' })))
     }
     setRunning(false)
@@ -259,6 +280,8 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity }: FileQ
               onChange={(event) => {
                 if (event.target.value) playSound('toggle')
                 setSelection((current) => ({ ...current, [entry.id]: event.target.value }))
+                // Cambiar el destino de un archivo ya convertido lo vuelve pendiente de nuevo.
+                forgetResult(entry.id)
               }}
               disabled={running}
             >
@@ -378,9 +401,9 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity }: FileQ
               </button>
             )}
             {!running && (
-              <button type="button" className="ct-btn ct-btn-dark" onClick={() => { void convertAll() }} disabled={!convertible.length}>
+              <button type="button" className="ct-btn ct-btn-dark" onClick={() => { void convertAll() }} disabled={!toConvert.length}>
                 <Icon name="refresh" size={15} />
-                Convertir todos
+                {alreadyDone > 0 ? `Convertir pendientes (${toConvert.length})` : 'Convertir todos'}
               </button>
             )}
             {running && (

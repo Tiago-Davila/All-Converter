@@ -181,6 +181,7 @@ a:hover { color: var(--ct-violet-deep); }
 /* El velo de drag cubre el viewport entero en modo primera página */
 .ct-page-hero .ct-hero-dragveil { position: fixed; }
 .ct-page-hero .ct-hero-dragring { inset: 13px; }
+.ct-page-hero .ct-hero-frame { inset: 13px; }
 
 .ct-icn { stroke: currentColor; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .ct-icn-shield { stroke: var(--ct-shield); }
@@ -274,6 +275,23 @@ a:hover { color: var(--ct-violet-deep); }
   background: radial-gradient(120% 80% at 50% 0%, transparent 40%, rgba(6, 7, 11, .55) 100%);
   pointer-events: none;
 }
+
+/*
+ * Marco punteado del dropzone: SIEMPRE visible ("las líneas") en reposo.
+ * Al arrastrar se desvanece y el velo animado (.ct-hero-dragveil) toma el
+ * relevo con su propio anillo + blur + texto.
+ */
+.ct-hero-frame {
+  position: absolute;
+  inset: 14px;
+  z-index: 2;
+  border: 2px dashed rgba(255, 255, 255, .26);
+  border-radius: 18px;
+  pointer-events: none;
+  transition: opacity .18s ease, border-color .18s ease;
+}
+.ct-hero[data-drag-over="true"] .ct-hero-frame { opacity: 0; }
+.ct-hero[data-compact="true"] .ct-hero-frame { inset: 8px; border-radius: 14px; }
 
 .ct-hero-body {
   position: relative;
@@ -814,3 +832,95 @@ a:hover { color: var(--ct-violet-deep); }
 
 /* spinner utilitario */
 .ct-spin { animation: ct-spin .8s linear infinite; }
+
+/* ── Formatos (showcase de portada) ────────────────────────────────────────── */
+.ct-formats {
+  background: var(--ct-bg);
+  padding: clamp(40px, 6vw, 72px) clamp(16px, 4vw, 32px);
+}
+
+.ct-formats-inner { max-width: 1100px; margin: 0 auto; }
+
+.ct-formats-eyebrow {
+  margin: 0;
+  font-family: var(--ct-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--ct-muted);
+}
+
+.ct-formats-title {
+  margin: 6px 0 4px;
+  font-size: clamp(22px, 3vw, 30px);
+  font-weight: 680;
+  letter-spacing: -0.02em;
+  color: var(--ct-ink);
+}
+
+.ct-formats-lead {
+  margin: 0 0 24px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ct-muted);
+  max-width: 60ch;
+}
+
+.ct-formats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.ct-format-card {
+  background: var(--ct-card);
+  border: 1px solid var(--ct-border);
+  border-radius: 16px;
+  padding: 18px;
+  box-shadow: 0 1px 2px rgba(20, 20, 25, .03);
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.ct-format-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px -14px rgba(20, 20, 25, .28);
+  border-color: var(--ct-border-soft);
+}
+
+.ct-format-ic {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 12px;
+}
+.ct-format-ic .ct-icn { stroke-width: 1.8; }
+
+.ct-format-ic[data-cat="pdf"] { background: var(--ct-error-bg); }
+.ct-format-ic[data-cat="pdf"] .ct-icn { stroke: var(--ct-error-ink); }
+.ct-format-ic[data-cat="image"] { background: #ecebfb; }
+.ct-format-ic[data-cat="image"] .ct-icn { stroke: var(--ct-violet-deep); }
+.ct-format-ic[data-cat="doc"] { background: #e6ecfb; }
+.ct-format-ic[data-cat="doc"] .ct-icn { stroke: #2f5fd0; }
+.ct-format-ic[data-cat="sheet"] { background: var(--ct-done-bg); }
+.ct-format-ic[data-cat="sheet"] .ct-icn { stroke: var(--ct-done-ink); }
+.ct-format-ic[data-cat="audio"] { background: var(--ct-prep-bg); }
+.ct-format-ic[data-cat="audio"] .ct-icn { stroke: #6b4b8a; }
+.ct-format-ic[data-cat="video"] { background: #e3f1f4; }
+.ct-format-ic[data-cat="video"] .ct-icn { stroke: #1f7a8c; }
+
+.ct-format-title {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+  color: var(--ct-ink);
+}
+
+.ct-format-desc {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ct-muted);
+}

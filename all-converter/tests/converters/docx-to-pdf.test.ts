@@ -20,4 +20,11 @@ describe('DOCX to PDF converter', () => {
     expect(result.previewKind).toBe('pdf')
     expect(new TextDecoder().decode(result.buffer.slice(0, 5))).toBe('%PDF-')
   })
+
+  it('DOCX→PDF ahora incrusta las tablas del documento', async () => {
+    const file = new File([await readFile(new URL('../fixtures/table.docx', import.meta.url))], 'table.docx')
+    const [result] = await docxToPdfConverter.convert(file, noop, {}, signal)
+    expect(new TextDecoder().decode(result.buffer.slice(0, 5))).toBe('%PDF-')
+    expect(Buffer.from(result.buffer).toString('latin1')).toContain('Producto')
+  })
 })

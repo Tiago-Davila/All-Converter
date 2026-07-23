@@ -7,6 +7,7 @@ import { ShaderBackground } from './ui/background/ShaderBackground'
 import { targetFor, type BackgroundActivity } from './ui/background/intensity'
 import { Header } from './ui/components/Header'
 import { Dropzone } from './ui/components/Dropzone'
+import { FormatsShowcase } from './ui/components/FormatsShowcase'
 import { IconSprite } from './ui/components/icons'
 import { playSound } from './ui/sound/player'
 
@@ -97,6 +98,8 @@ export function App() {
           </p>
         </div>
       </div>
+      {/* Catálogo de formatos: showcase de portada, oculto al cargar archivos. */}
+      {heroMode && <FormatsShowcase />}
     </>
   )
 }
