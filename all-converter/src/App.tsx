@@ -8,10 +8,13 @@ import { targetFor, type BackgroundActivity } from './ui/background/intensity'
 import { Header } from './ui/components/Header'
 import { Dropzone } from './ui/components/Dropzone'
 import { FormatsShowcase } from './ui/components/FormatsShowcase'
+import { ResizePage } from './ui/components/ResizePage'
 import { IconSprite } from './ui/components/icons'
+import { useHashRoute } from './ui/routing'
 import { playSound } from './ui/sound/player'
 
 export function App() {
+  const route = useHashRoute()
   const [entries, setEntries] = useState<FileEntry[]>([])
   const [dragOver, setDragOver] = useState(false)
   const [hovering, setHovering] = useState(false)
@@ -40,6 +43,18 @@ export function App() {
     entriesRef.current = []
     setEntries(entriesRef.current)
   }, [])
+
+  // Página aparte del redimensionador (003 FR-015). Los hooks de arriba ya
+  // corrieron todos, así que la salida temprana no altera su orden; la cola vive
+  // en entriesRef y sobrevive a ir y volver.
+  if (route === 'resize') {
+    return (
+      <>
+        <IconSprite />
+        <ResizePage />
+      </>
+    )
+  }
 
   const isConverting = batchProgress !== undefined
 
