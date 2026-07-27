@@ -9,6 +9,7 @@
  */
 import React, { useState } from 'react'
 import { Icon } from './icons'
+import { RESIZE_HASH, useHashRoute } from '../routing'
 import { isSoundEnabled, setSoundEnabled, soundVetoed, playSound } from '../sound/player'
 
 function SoundToggle(): React.ReactElement {
@@ -46,6 +47,8 @@ function SoundToggle(): React.ReactElement {
 }
 
 export function Header(): React.ReactElement {
+  const route = useHashRoute()
+
   return (
     <header className="ct-header" data-testid="app-header" role="banner">
       <div className="ct-brand" data-testid="logo" aria-label="ConvertiTodo">
@@ -58,6 +61,13 @@ export function Header(): React.ReactElement {
         </span>
       </div>
       <div className="ct-header-right">
+        {/* Alcanzable también con archivos en la cola; oculto en la página propia (003 FR-015). */}
+        {route !== 'resize' && (
+          <a className="ct-nav-link" href={RESIZE_HASH} data-testid="nav-resize">
+            <Icon name="img" size={14} />
+            Redimensionar
+          </a>
+        )}
         <SoundToggle />
         <span
           className="ct-privacy-pill"

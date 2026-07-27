@@ -118,6 +118,16 @@ export function Dropzone({
             >
               Elegir carpeta
             </button>
+            {/* Herramienta aparte, no es un destino de la cola (003 FR-015). */}
+            <a
+              className="ct-btn ct-btn-hero-ghost"
+              href="#/redimensionar"
+              data-testid="btn-resize"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Icon name="img" size={16} />
+              Redimensionar imagen
+            </a>
           </div>
           <span className="ct-hero-badge">
             <Icon name="shield" size={14} className="ct-icn-shield-hero" />

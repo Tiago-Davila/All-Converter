@@ -1,3 +1,4 @@
+import { isValidPair } from '../lib/image-resize'
 import type { WorkerInput, WorkerStartRequest } from './types'
 
 const ext = (input: WorkerInput) => input.name.split('.').pop()?.toLowerCase() ?? ''
@@ -9,6 +10,19 @@ export function validateImageRequest(request: WorkerStartRequest) {
   if (request.operation !== 'image-convert') throw new Error(`Operación de imagen desconocida: ${request.operation}.`)
   inputs(request); format(request.inputs[0], ['image/png', 'image/jpeg', 'image/webp'], ['png', 'jpg', 'jpeg', 'webp'], 'Imagen'); choice(request, 'mime', ['image/png', 'image/jpeg', 'image/webp'])
   for (const key of ['maxWidth', 'maxHeight'] as const) { const value = request.options[key]; if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)) throw new Error(`Opción ${key} inválida.`) }
+  const quality = request.options.quality; if (quality !== undefined && (typeof quality !== 'number' || quality <= 0 || quality > 1)) throw new Error('La calidad debe estar entre 0 y 1.')
+}
+
+/**
+ * Redimensionado (003). A diferencia de validateImageRequest, NO hay whitelist de
+ * mime de ENTRADA: la frontera es lo que el navegador sepa decodificar (FR-002).
+ * La salida sí se restringe a lo que el canvas sabe codificar.
+ */
+export function validateImageResizeRequest(request: WorkerStartRequest) {
+  if (request.operation !== 'image-resize') throw new Error(`Operación de imagen desconocida: ${request.operation}.`)
+  inputs(request); choice(request, 'mime', ['image/png', 'image/jpeg', 'image/webp'])
+  const { width, height } = request.options
+  if (typeof width !== 'number' || typeof height !== 'number' || !isValidPair(width, height)) throw new Error('Las dimensiones pedidas están fuera del rango permitido.')
   const quality = request.options.quality; if (quality !== undefined && (typeof quality !== 'number' || quality <= 0 || quality > 1)) throw new Error('La calidad debe estar entre 0 y 1.')
 }
 
