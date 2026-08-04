@@ -38,6 +38,7 @@ const FORMATS: readonly FormatCard[] = [
   { title: 'Word a Excel', desc: 'Pasá las tablas de un DOCX a XLSX.', cat: 'sheet' },
   { title: 'Word a texto/HTML', desc: 'Extraé el contenido en TXT o HTML.', cat: 'doc' },
   { title: 'Markdown a PDF', desc: 'Convertí un .md en un PDF paginado.', cat: 'doc' },
+  { title: 'ODT a PDF', desc: 'Convertí documentos de LibreOffice a PDF.', cat: 'doc' },
   { title: 'Convertir imagen', desc: 'Entre PNG, JPG y WebP.', cat: 'image' },
   { title: 'Imágenes a PDF', desc: 'Uní varias imágenes en un PDF.', cat: 'pdf' },
   { title: 'Convertir planilla', desc: 'Entre CSV, JSON y XLSX.', cat: 'sheet' },
