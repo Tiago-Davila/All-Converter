@@ -124,6 +124,11 @@ ningún carácter del texto original aparece roto ni transformado en marcado acc
 - **Ida y vuelta fiel**: MD → PDF → MD conserva el texto y la estructura gruesa, no el
   formato exacto. Es inherente a pasar por un formato de presentación.
 - **Resaltado de sintaxis** en los bloques de código.
+- **El algoritmo de delimitadores de CommonMark**: la anidación de énfasis con el **mismo**
+  carácter (`**muy *fuerte***`) se resuelve parcialmente. Mezclando delimitadores
+  (`**muy _fuerte_**`) o con el triple (`***ambas***`) funciona como se espera. Resolverlo
+  del todo exigiría el algoritmo completo de delimiter runs, desproporcionado para los
+  cinco tipos de bloque que sabe dibujar el renderizador.
 
 ## Discrepancias con las reglas del proyecto
 
