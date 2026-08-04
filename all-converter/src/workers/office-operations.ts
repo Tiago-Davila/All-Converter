@@ -114,6 +114,15 @@ async function odtPdf(input: WorkerInput, onProgress: (value: ConversionProgress
   return [result]
 }
 
+async function mdPdf(input: WorkerInput, onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> {
+  const { markdownToBlocks } = await import('./markdown-parse'); progress(onProgress, 40, 'Leyendo Markdown')
+  const blocks = markdownToBlocks(new TextDecoder().decode(input.buffer))
+  if (!blocks.length) throw new Error('El archivo no contiene contenido convertible.')
+  progress(onProgress, 70, 'Componiendo PDF')
+  const result = await renderBlocksToPdf(blocks, baseName(input.name)); progress(onProgress, 100, 'PDF creado')
+  return [result]
+}
+
 async function docxXlsx(input: WorkerInput, onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> {
   const [mammoth, xlsx] = await Promise.all([import('mammoth'), import('xlsx')]); progress(onProgress, 30, 'Leyendo documento')
   const { value: html } = await mammoth.convertToHtml({ arrayBuffer: input.buffer })
@@ -130,6 +139,7 @@ export async function executeOfficeOperation(operation: string, input: WorkerInp
   if (operation === 'docx-text') return docxText(input, options, onProgress)
   if (operation === 'docx-to-pdf') return docxPdf(input, onProgress)
   if (operation === 'odt-to-pdf') return odtPdf(input, onProgress)
+  if (operation === 'md-to-pdf') return mdPdf(input, onProgress)
   if (operation === 'docx-to-xlsx') return docxXlsx(input, onProgress)
   throw new Error(`Operación Office desconocida: ${operation}.`)
 }
