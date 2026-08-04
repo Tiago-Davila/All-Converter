@@ -43,7 +43,7 @@ export function validatePdfRequest(request: WorkerStartRequest) {
   if (request.operation === 'pdf-merge') { if (request.inputs.length < 2) throw new Error('Para unir PDFs se necesitan al menos dos archivos.'); request.inputs.forEach(pdf); return }
   inputs(request); pdf(request.inputs[0])
   if (request.operation === 'pdf-to-images') { choice(request, 'target', ['png', 'jpg']); return }
-  if (['pdf-to-txt', 'pdf-to-docx', 'pdf-split', 'pdf-rotate'].includes(request.operation)) return
+  if (['pdf-to-txt', 'pdf-to-docx', 'pdf-to-md', 'pdf-split', 'pdf-rotate'].includes(request.operation)) return
   throw new Error(`Operación PDF desconocida: ${request.operation}.`)
 }
 
