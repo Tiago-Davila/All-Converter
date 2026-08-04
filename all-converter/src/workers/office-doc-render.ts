@@ -15,6 +15,15 @@ export interface Run {
   italic?: boolean
 }
 
+/**
+ * Tamaño con el que el documento original muestra una imagen, en milímetros.
+ * Su ausencia significa "usá los píxeles intrínsecos a 96 dpi" (spec 005, FR-002).
+ */
+export interface DisplaySize {
+  wmm: number
+  hmm: number
+}
+
 export type Block =
   | { type: 'heading'; level: number; runs: Run[] }
   | { type: 'para'; runs: Run[] }
@@ -66,6 +75,17 @@ export function parseHtmlTableRows(tableInner: string): string[][] {
   return [...tableInner.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
     .map((row) => [...row[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((cell) => cellText(cell[1])))
     .filter((row) => row.length > 0)
+}
+
+/** Milímetros por unidad de longitud de ODF (`svg:width="5.291cm"`). */
+const ODF_UNITS: Record<string, number> = { mm: 1, cm: 10, in: 25.4, pt: 25.4 / 72, pc: 25.4 / 6, px: 25.4 / 96 }
+
+/** Convierte una longitud de ODF a milímetros. Sin unidad, cero o negativa → `undefined`. */
+export function odfLengthToMm(value: string | undefined): number | undefined {
+  const match = /^\s*([+-]?\d*\.?\d+)\s*(mm|cm|in|pt|pc|px)\s*$/i.exec(value ?? '')
+  if (!match) return undefined
+  const mm = Number(match[1]) * ODF_UNITS[match[2].toLowerCase()]
+  return Number.isFinite(mm) && mm > 0 ? mm : undefined
 }
 
 function base64ToBytes(base64: string): Uint8Array {

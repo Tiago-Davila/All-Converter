@@ -4,6 +4,7 @@ import {
   inlineRuns,
   imageSize,
   odfContentToBlocks,
+  odfLengthToMm,
   renderBlocksToPdf,
   type Block,
 } from '../../src/workers/office-doc-render'
@@ -50,6 +51,27 @@ describe('imageSize', () => {
   })
   it('devuelve undefined para bytes desconocidos', () => {
     expect(imageSize(new Uint8Array([1, 2, 3, 4]))).toBeUndefined()
+  })
+})
+
+describe('odfLengthToMm', () => {
+  it('convierte todas las unidades que usa ODF', () => {
+    expect(odfLengthToMm('43mm')).toBeCloseTo(43, 10)
+    expect(odfLengthToMm('5.291cm')).toBeCloseTo(52.91, 10)
+    expect(odfLengthToMm('2in')).toBeCloseTo(50.8, 10)
+    expect(odfLengthToMm('150pt')).toBeCloseTo(52.9167, 3)
+    expect(odfLengthToMm('96px')).toBeCloseTo(25.4, 10)
+    expect(odfLengthToMm('1pc')).toBeCloseTo(4.2333, 3)
+  })
+
+  it('tolera espacios y mayúsculas', () => {
+    expect(odfLengthToMm(' 2IN ')).toBeCloseTo(50.8, 10)
+  })
+
+  it('rechaza lo que no es una longitud positiva con unidad', () => {
+    for (const value of ['abc', '12', '', '0cm', '-3cm', undefined]) {
+      expect(odfLengthToMm(value)).toBeUndefined()
+    }
   })
 })
 
