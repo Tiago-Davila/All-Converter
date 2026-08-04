@@ -4,7 +4,7 @@
  *
  * Catálogo estático: el registro (converters/registry.ts) no expone
  * descripción/ícono/acento por conversor, así que la copia curada vive acá.
- * Mantener 1:1 con los 16 conversores registrados.
+ * Mantener 1:1 con los conversores registrados.
  */
 import React from 'react'
 import { Icon, type IconName } from './icons'
@@ -31,11 +31,14 @@ const FORMATS: readonly FormatCard[] = [
   { title: 'Dividir PDF', desc: 'Separá un PDF en varios archivos.', cat: 'pdf' },
   { title: 'Rotar PDF', desc: 'Girá las páginas de tu PDF.', cat: 'pdf' },
   { title: 'PDF a Word', desc: 'Convertí PDF a DOCX editable.', cat: 'doc' },
+  { title: 'PDF a Markdown', desc: 'Pasá un PDF con estructura a .md.', cat: 'doc' },
   { title: 'PDF a imágenes', desc: 'Extraé cada página como PNG o JPG.', cat: 'image' },
   { title: 'PDF a TXT', desc: 'Extraé el texto plano de tu PDF.', cat: 'pdf' },
   { title: 'Word a PDF', desc: 'Convertí documentos DOCX a PDF.', cat: 'doc' },
   { title: 'Word a Excel', desc: 'Pasá las tablas de un DOCX a XLSX.', cat: 'sheet' },
   { title: 'Word a texto/HTML', desc: 'Extraé el contenido en TXT o HTML.', cat: 'doc' },
+  { title: 'Markdown a PDF', desc: 'Convertí un .md en un PDF paginado.', cat: 'doc' },
+  { title: 'ODT a PDF', desc: 'Convertí documentos de LibreOffice a PDF.', cat: 'doc' },
   { title: 'Convertir imagen', desc: 'Entre PNG, JPG y WebP.', cat: 'image' },
   { title: 'Imágenes a PDF', desc: 'Uní varias imágenes en un PDF.', cat: 'pdf' },
   { title: 'Convertir planilla', desc: 'Entre CSV, JSON y XLSX.', cat: 'sheet' },

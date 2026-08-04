@@ -26,6 +26,7 @@ no hay backend, no hay base de datos, no hay telemetría, no hay llamadas a APIs
 | PDF → TXT | Extracción de texto en orden de lectura. Rechaza PDFs escaneados (sin capa de texto). |
 | PDF → Imágenes | Una imagen PNG o JPG por página. |
 | PDF → DOCX | Heurísticas de título por tamaño de fuente. Fidelidad parcial: texto y estructura básica, sin diseño ni imágenes. |
+| PDF → Markdown | Misma inferencia de estructura que PDF → DOCX: encabezados, listas y tablas GFM. Sin imágenes. Rechaza PDFs escaneados. |
 | PDF merge | Une varios PDFs en uno. |
 | PDF split | Divide un PDF por páginas o rangos. |
 | PDF rotate | Rota páginas individuales o el documento completo. |
@@ -34,8 +35,10 @@ no hay backend, no hay base de datos, no hay telemetría, no hay llamadas a APIs
 | Conversión | Detalles |
 |---|---|
 | DOCX → TXT / HTML | Extracción de texto y marcado con `mammoth`. |
-| DOCX → PDF | Solo texto. Fidelidad parcial declarada. |
+| DOCX → PDF | Texto, encabezados, listas, tablas e imágenes con el tamaño que tienen en Word. Fidelidad parcial declarada: no conserva fuentes, márgenes ni la posición de las imágenes flotantes. |
 | DOCX → XLSX | Extrae tablas del documento (una hoja por tabla). |
+| ODT → PDF | Igual que DOCX → PDF, leyendo el tamaño de imagen del `draw:frame`. |
+| Markdown → PDF | Encabezados, párrafos, listas, tablas GFM, citas, bloques de código y énfasis. Las imágenes solo se incrustan si están escritas como data URI. |
 
 ### Audio y vídeo
 | Conversión | Detalles |

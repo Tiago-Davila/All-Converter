@@ -1,7 +1,7 @@
 import type { ConversionProgress, ConversionResult } from '../converters/types'
 import type { WorkerInput, WorkerOptions } from './types'
 import { decodeCsv, isFlatTabularJson } from './tabular'
-import { htmlToBlocks, parseHtmlTableRows, renderBlocksToPdf, odfContentToBlocks, imageBlockFromBytes, type OdfImageResolver } from './office-doc-render'
+import { htmlToBlocks, imageSize, parseHtmlTableRows, renderBlocksToPdf, odfContentToBlocks, imageBlockFromBytes, type DisplayLookup, type OdfImageResolver } from './office-doc-render'
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
@@ -63,10 +63,32 @@ async function docxText(input: WorkerInput, options: WorkerOptions, onProgress: 
   return [{ name: `${baseName(input.name)}.${target}`, mime: target === 'html' ? 'text/html' : 'text/plain', buffer, sizeBytes: buffer.byteLength }]
 }
 
+/**
+ * Tamaño de visualización de las imágenes del DOCX.
+ *
+ * mammoth entrega los bytes pero descarta el tamaño, así que se abre el paquete en
+ * paralelo para leer los `wp:extent` de `word/document.xml`. Si el zip no se puede leer,
+ * se devuelve un lookup vacío: el renderizador degrada a los píxeles intrínsecos en vez
+ * de abortar la conversión (spec 005, FR-005).
+ */
+async function docxDisplayLookup(buffer: ArrayBuffer): Promise<DisplayLookup> {
+  try {
+    const JSZip = (await import('jszip')).default
+    const { extractDocxImageSizes } = await import('./docx-image-size')
+    return await extractDocxImageSizes(await JSZip.loadAsync(buffer), imageSize)
+  } catch {
+    return () => undefined
+  }
+}
+
 async function docxPdf(input: WorkerInput, onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> {
-  const mammoth = await import('mammoth'); progress(onProgress, 30, 'Leyendo documento')
-  const { value: html } = await mammoth.convertToHtml({ arrayBuffer: input.buffer })
-  const blocks = htmlToBlocks(html)
+  const mammoth = await import('mammoth'); progress(onProgress, 25, 'Leyendo documento')
+  const [{ value: html }, resolveDisplay] = await Promise.all([
+    mammoth.convertToHtml({ arrayBuffer: input.buffer }),
+    docxDisplayLookup(input.buffer),
+  ])
+  progress(onProgress, 50, 'Midiendo imágenes')
+  const blocks = htmlToBlocks(html, resolveDisplay)
   if (!blocks.length) throw new Error('El documento no contiene texto extraíble.')
   progress(onProgress, 70, 'Componiendo PDF')
   const result = await renderBlocksToPdf(blocks, baseName(input.name)); progress(onProgress, 100, 'PDF creado')
@@ -92,6 +114,15 @@ async function odtPdf(input: WorkerInput, onProgress: (value: ConversionProgress
   return [result]
 }
 
+async function mdPdf(input: WorkerInput, onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> {
+  const { markdownToBlocks } = await import('./markdown-parse'); progress(onProgress, 40, 'Leyendo Markdown')
+  const blocks = markdownToBlocks(new TextDecoder().decode(input.buffer))
+  if (!blocks.length) throw new Error('El archivo no contiene contenido convertible.')
+  progress(onProgress, 70, 'Componiendo PDF')
+  const result = await renderBlocksToPdf(blocks, baseName(input.name)); progress(onProgress, 100, 'PDF creado')
+  return [result]
+}
+
 async function docxXlsx(input: WorkerInput, onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> {
   const [mammoth, xlsx] = await Promise.all([import('mammoth'), import('xlsx')]); progress(onProgress, 30, 'Leyendo documento')
   const { value: html } = await mammoth.convertToHtml({ arrayBuffer: input.buffer })
@@ -108,6 +139,7 @@ export async function executeOfficeOperation(operation: string, input: WorkerInp
   if (operation === 'docx-text') return docxText(input, options, onProgress)
   if (operation === 'docx-to-pdf') return docxPdf(input, onProgress)
   if (operation === 'odt-to-pdf') return odtPdf(input, onProgress)
+  if (operation === 'md-to-pdf') return mdPdf(input, onProgress)
   if (operation === 'docx-to-xlsx') return docxXlsx(input, onProgress)
   throw new Error(`Operación Office desconocida: ${operation}.`)
 }

@@ -60,6 +60,18 @@ async function pdfDocx(input: WorkerInput, onProgress: (value: ConversionProgres
   return [{ name: `${baseName(input.name)}.docx`, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer, sizeBytes: buffer.byteLength }]
 }
 
+async function pdfMarkdown(input: WorkerInput, onProgress: (value: ConversionProgress) => void): Promise<ConversionResult[]> {
+  // richText: igual que pdf-to-docx, resuelve negrita/itálica y retiene columnas para las tablas.
+  const layout = await extractPdfLayout(await openPdf(input), onProgress, { richText: true })
+  if (!layout.text.trim()) throw new Error(SCANNED_ERROR)
+  const { blocksToMarkdown } = await import('./markdown-write')
+  const markdown = blocksToMarkdown(inferDocumentBlocks(layout.pages))
+  if (!markdown) throw new Error('El documento no contiene contenido convertible.')
+  const buffer = new TextEncoder().encode(markdown).buffer
+  report(onProgress, 100, 'Markdown creado')
+  return [{ name: `${baseName(input.name)}.md`, mime: 'text/markdown', buffer, sizeBytes: buffer.byteLength }]
+}
+
 function parseRanges(input: string, pageCount: number): Array<[number, number]> { const ranges = input.split(',').map((part) => part.trim()).filter(Boolean).map((part): [number, number] => { const match = /^(\d+)(?:\s*-\s*(\d+))?$/.exec(part); if (!match) throw new Error(`Rango inválido: "${part}".`); const start = Number(match[1]); const end = Number(match[2] ?? match[1]); if (start < 1 || end > pageCount || start > end) throw new Error(`El rango "${part}" no existe en un PDF de ${pageCount} páginas.`); return [start, end] }); if (!ranges.length) throw new Error('Indicá al menos un rango de páginas.'); return ranges }
 async function savePdf(pdf: PdfLibDocument, name: string): Promise<ConversionResult> { const output = new Uint8Array(await pdf.save()); return { name, mime: 'application/pdf', buffer: output.buffer, sizeBytes: output.byteLength, previewKind: 'pdf' } }
 
@@ -93,6 +105,7 @@ export async function executePdfOperation(operation: string, inputs: WorkerInput
   if (operation === 'pdf-to-txt') return pdfText(input, onProgress)
   if (operation === 'pdf-to-images') return pdfImages(input, options, onProgress)
   if (operation === 'pdf-to-docx') return pdfDocx(input, onProgress)
+  if (operation === 'pdf-to-md') return pdfMarkdown(input, onProgress)
   if (operation === 'images-to-pdf') return imagesPdf(inputs, onProgress)
   return manipulate(operation, inputs, options, onProgress)
 }

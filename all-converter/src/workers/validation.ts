@@ -31,6 +31,7 @@ export function validateOfficeRequest(request: WorkerStartRequest) {
   if (request.operation === 'docx-text') { docx(); choice(request, 'target', ['txt', 'html']); return }
   if (request.operation === 'docx-to-pdf' || request.operation === 'docx-to-xlsx') { docx(); return }
   if (request.operation === 'odt-to-pdf') { format(request.inputs[0], ['application/vnd.oasis.opendocument.text'], ['odt'], 'ODT'); return }
+  if (request.operation === 'md-to-pdf') { format(request.inputs[0], ['text/markdown', 'text/x-markdown'], ['md', 'markdown'], 'Markdown'); return }
   if (request.operation === 'spreadsheet-to-pdf') { format(request.inputs[0], ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.oasis.opendocument.spreadsheet', 'text/csv'], ['xlsx', 'ods', 'csv'], 'Planilla'); return }
   if (request.operation === 'spreadsheet-convert') { format(request.inputs[0], ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.oasis.opendocument.spreadsheet', 'text/csv', 'application/json'], ['xlsx', 'ods', 'csv', 'json'], 'Planilla'); const target = choice(request, 'target', ['csv', 'json', 'xlsx']); const source = ext(request.inputs[0]); const workbooks = ['xlsx', 'ods']; if (source === target || (!workbooks.includes(source) && !workbooks.includes(target))) throw new Error(`La conversión ${source.toUpperCase()}→${target.toUpperCase()} no es compatible.`); return }
   throw new Error(`Operación Office desconocida: ${request.operation}.`)
@@ -42,7 +43,7 @@ export function validatePdfRequest(request: WorkerStartRequest) {
   if (request.operation === 'pdf-merge') { if (request.inputs.length < 2) throw new Error('Para unir PDFs se necesitan al menos dos archivos.'); request.inputs.forEach(pdf); return }
   inputs(request); pdf(request.inputs[0])
   if (request.operation === 'pdf-to-images') { choice(request, 'target', ['png', 'jpg']); return }
-  if (['pdf-to-txt', 'pdf-to-docx', 'pdf-split', 'pdf-rotate'].includes(request.operation)) return
+  if (['pdf-to-txt', 'pdf-to-docx', 'pdf-to-md', 'pdf-split', 'pdf-rotate'].includes(request.operation)) return
   throw new Error(`Operación PDF desconocida: ${request.operation}.`)
 }
 
