@@ -29,7 +29,7 @@ export type Block =
   | { type: 'para'; runs: Run[] }
   | { type: 'list'; ordered: boolean; items: Run[][] }
   | { type: 'table'; rows: string[][] }
-  | { type: 'image'; dataUri: string; format: 'PNG' | 'JPEG'; w: number; h: number }
+  | { type: 'image'; dataUri: string; format: 'PNG' | 'JPEG'; w: number; h: number; display?: DisplaySize }
 
 // ── Texto ──────────────────────────────────────────────────────────────────
 export function decodeEntities(value: string): string {
@@ -120,27 +120,35 @@ export function imageSize(bytes: Uint8Array): { w: number; h: number } | undefin
   return undefined
 }
 
-function imageBlockFromDataUri(dataUri: string): Extract<Block, { type: 'image' }> | undefined {
+/**
+ * Resuelve el tamaño de visualización de una imagen a partir de su contenido.
+ * mammoth descarta ese dato, así que lo aporta quien haya leído el paquete original.
+ */
+export type DisplayLookup = (bytes: Uint8Array) => DisplaySize | undefined
+
+function imageBlockFromDataUri(dataUri: string, resolveDisplay?: DisplayLookup): Extract<Block, { type: 'image' }> | undefined {
   const match = /^data:image\/(png|jpe?g);base64,(.+)$/i.exec(dataUri)
   if (!match) return undefined
-  const size = imageSize(base64ToBytes(match[2]))
+  const bytes = base64ToBytes(match[2])
+  const size = imageSize(bytes)
   if (!size) return undefined
-  return { type: 'image', dataUri, format: match[1].toLowerCase() === 'png' ? 'PNG' : 'JPEG', w: size.w, h: size.h }
+  const display = resolveDisplay?.(bytes)
+  return { type: 'image', dataUri, format: match[1].toLowerCase() === 'png' ? 'PNG' : 'JPEG', w: size.w, h: size.h, ...(display ? { display } : {}) }
 }
 
 /** Extrae bloques imagen de un fragmento HTML (mammoth ancla imágenes dentro de <p>). */
-function imagesIn(html: string): Array<Extract<Block, { type: 'image' }>> {
+function imagesIn(html: string, resolveDisplay?: DisplayLookup): Array<Extract<Block, { type: 'image' }>> {
   const images: Array<Extract<Block, { type: 'image' }>> = []
   for (const tag of html.matchAll(/<img\b[^>]*>/gi)) {
     const src = /\ssrc\s*=\s*"([^"]+)"/i.exec(tag[0])?.[1] ?? /\ssrc\s*=\s*'([^']+)'/i.exec(tag[0])?.[1]
-    const image = src ? imageBlockFromDataUri(src) : undefined
+    const image = src ? imageBlockFromDataUri(src, resolveDisplay) : undefined
     if (image) images.push(image)
   }
   return images
 }
 
 /** Convierte el HTML de mammoth en una lista ordenada de bloques. */
-export function htmlToBlocks(html: string): Block[] {
+export function htmlToBlocks(html: string, resolveDisplay?: DisplayLookup): Block[] {
   const blocks: Block[] = []
   const re =
     /<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>|<p\b[^>]*>([\s\S]*?)<\/p>|<(ul|ol)\b[^>]*>([\s\S]*?)<\/\4>|<table\b[^>]*>([\s\S]*?)<\/table>|<img\b[^>]*>/gi
@@ -150,7 +158,7 @@ export function htmlToBlocks(html: string): Block[] {
       const runs = inlineRuns(match[2])
       if (runs.length) blocks.push({ type: 'heading', level: Number(match[1]), runs })
     } else if (match[3] !== undefined) {
-      for (const image of imagesIn(match[3])) blocks.push(image)
+      for (const image of imagesIn(match[3], resolveDisplay)) blocks.push(image)
       const runs = inlineRuns(match[3])
       if (runs.length) blocks.push({ type: 'para', runs })
     } else if (match[4]) {
@@ -163,7 +171,7 @@ export function htmlToBlocks(html: string): Block[] {
       const rows = parseHtmlTableRows(match[6])
       if (rows.length) blocks.push({ type: 'table', rows })
     } else {
-      for (const image of imagesIn(match[0])) blocks.push(image)
+      for (const image of imagesIn(match[0], resolveDisplay)) blocks.push(image)
     }
   }
   return blocks
@@ -254,21 +262,44 @@ export function odfContentToBlocks(contentXml: string, resolveImage?: OdfImageRe
   return blocks
 }
 
+/** Tamaño de visualización declarado por el `<draw:frame>` que envuelve a la imagen. */
+function odfFrameSize(attributes: string): DisplaySize | undefined {
+  const wmm = odfLengthToMm(/\bsvg:width\s*=\s*"([^"]+)"/i.exec(attributes)?.[1])
+  const hmm = odfLengthToMm(/\bsvg:height\s*=\s*"([^"]+)"/i.exec(attributes)?.[1])
+  return wmm !== undefined && hmm !== undefined ? { wmm, hmm } : undefined
+}
+
+const drawImagePattern = () => /<draw:image\b[^>]*xlink:href="([^"]+)"[^>]*\/?>/gi
+
+/**
+ * En ODF el tamaño vive en el `<draw:frame>` contenedor, en el mismo content.xml, así
+ * que no hace falta volver a abrir el paquete.
+ *
+ * Se recorre el XML una sola vez en orden de documento: cada imagen toma el tamaño del
+ * frame que la contiene, y las que no están dentro de ninguno (ODT poco habituales)
+ * salen igual, sin tamaño declarado.
+ */
 function* odfImages(xml: string, resolveImage: OdfImageResolver): Generator<Extract<Block, { type: 'image' }>> {
-  for (const image of xml.matchAll(/<draw:image\b[^>]*xlink:href="([^"]+)"[^>]*\/?>/gi)) {
+  const frames: Array<{ start: number; end: number; display?: DisplaySize }> = []
+  for (const frame of xml.matchAll(/<draw:frame\b([^>]*)>([\s\S]*?)<\/draw:frame>/gi)) {
+    frames.push({ start: frame.index, end: frame.index + frame[0].length, display: odfFrameSize(frame[1]) })
+  }
+  for (const image of xml.matchAll(drawImagePattern())) {
     const block = resolveImage(image[1])
-    if (block) yield block
+    if (!block) continue
+    const display = frames.find((frame) => image.index >= frame.start && image.index < frame.end)?.display
+    yield display ? { ...block, display } : block
   }
 }
 
 /** Crea un bloque imagen a partir de bytes crudos (para el resolver de ODT). */
-export function imageBlockFromBytes(bytes: Uint8Array, href: string): Extract<Block, { type: 'image' }> | undefined {
+export function imageBlockFromBytes(bytes: Uint8Array, href: string, display?: DisplaySize): Extract<Block, { type: 'image' }> | undefined {
   const size = imageSize(bytes)
   if (!size) return undefined
   const format: 'PNG' | 'JPEG' = /\.(jpe?g)$/i.test(href) || (bytes[0] === 0xff && bytes[1] === 0xd8) ? 'JPEG' : 'PNG'
   let binary = ''
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
-  return { type: 'image', dataUri: `data:image/${format === 'PNG' ? 'png' : 'jpeg'};base64,${btoa(binary)}`, format, w: size.w, h: size.h }
+  return { type: 'image', dataUri: `data:image/${format === 'PNG' ? 'png' : 'jpeg'};base64,${btoa(binary)}`, format, w: size.w, h: size.h, ...(display ? { display } : {}) }
 }
 
 // ── Renderizador a PDF ───────────────────────────────────────────────────────
@@ -344,10 +375,15 @@ export async function renderBlocksToPdf(blocks: Block[], baseName: string): Prom
       })
       y = (pdf.lastAutoTable?.finalY ?? y) + 6
     } else if (block.type === 'image') {
-      let drawW = maxW
-      let drawH = (block.h / block.w) * drawW
+      // Tamaño de visualización del documento original; si no lo hay, píxeles intrínsecos
+      // a 96 dpi. Nunca se agranda: solo se encoge para entrar en la caja útil.
       const maxH = pageH - TOP - MARGIN
-      if (drawH > maxH) { drawH = maxH; drawW = (block.w / block.h) * drawH }
+      let drawW = block.display?.wmm ?? (block.w * 25.4) / 96
+      let drawH = block.display?.hmm ?? (block.h * 25.4) / 96
+      if (!Number.isFinite(drawW) || !Number.isFinite(drawH) || drawW <= 0 || drawH <= 0) continue
+      const shrink = Math.min(1, maxW / drawW, maxH / drawH)
+      drawW *= shrink
+      drawH *= shrink
       if (y + drawH > pageH - MARGIN) { pdf.addPage(); y = TOP }
       try {
         pdf.addImage(block.dataUri, block.format, MARGIN, y, drawW, drawH)

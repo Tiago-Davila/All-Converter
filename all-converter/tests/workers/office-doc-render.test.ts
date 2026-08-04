@@ -99,6 +99,137 @@ describe('odfContentToBlocks (ODT)', () => {
   })
 })
 
+/**
+ * Dimensiones con las que el PDF dibuja cada imagen, en milímetros.
+ *
+ * jsPDF no comprime por defecto, así que el content stream va en texto plano y
+ * `writeImageToPDF` deja `q\n<w> 0 0 <h> <x> <y> cm\n/I<n> Do\nQ` en puntos. Los números
+ * salen de `hpf`, que deja un punto colgante (`144.`) y puede arrastrar error de coma
+ * flotante: hay que compararlos con toBeCloseTo, nunca como texto.
+ */
+const MM_PER_PT = 25.4 / 72
+function drawnImagesMm(buffer: ArrayBuffer): Array<{ w: number; h: number; x: number }> {
+  const raw = Buffer.from(buffer).toString('latin1')
+  const pattern = /\bq\s+([\d.]+) 0 0 ([\d.]+) ([\d.]+) ([\d.]+) cm\s+\/I\d+ Do\s+Q/g
+  return [...raw.matchAll(pattern)].map((match) => ({
+    w: parseFloat(match[1]) * MM_PER_PT,
+    h: parseFloat(match[2]) * MM_PER_PT,
+    x: parseFloat(match[3]) * MM_PER_PT,
+  }))
+}
+
+const imageBlock = (w: number, h: number, display?: { wmm: number; hmm: number }): Block => ({
+  type: 'image',
+  dataUri: `data:image/png;base64,${PNG_1x1_BASE64}`,
+  format: 'PNG',
+  w,
+  h,
+  ...(display ? { display } : {}),
+})
+
+describe('renderBlocksToPdf — tamaño de las imágenes', () => {
+  it('respeta el tamaño de visualización del documento original', async () => {
+    const result = await renderBlocksToPdf([imageBlock(1000, 500, { wmm: 50, hmm: 25 })], 'doc')
+    const [image] = drawnImagesMm(result.buffer)
+    expect(image.w).toBeCloseTo(50, 3)
+    expect(image.h).toBeCloseTo(25, 3)
+    expect(image.x).toBeCloseTo(15, 3) // margen izquierdo
+  })
+
+  // El A4 de jsPDF mide 595.28 × 841.89 pt, o sea 210.0016 mm de ancho: el ancho útil es
+  // 180.0016 mm, no 180 exactos. De ahí la precisión de 2 decimales en los topes.
+  it('encoge, conservando la proporción, lo que no entra en el ancho útil', async () => {
+    const result = await renderBlocksToPdf([imageBlock(10, 10, { wmm: 400, hmm: 200 })], 'doc')
+    const [image] = drawnImagesMm(result.buffer)
+    expect(image.w).toBeCloseTo(180, 2)
+    expect(image.h).toBeCloseTo(90, 2)
+  })
+
+  it('sin tamaño declarado usa los píxeles intrínsecos a 96 dpi', async () => {
+    const result = await renderBlocksToPdf([imageBlock(100, 50)], 'doc')
+    const [image] = drawnImagesMm(result.buffer)
+    expect(image.w).toBeCloseTo(26.4583, 3)
+    expect(image.h).toBeCloseTo(13.2292, 3)
+  })
+
+  it('sin tamaño declarado también encoge una imagen enorme', async () => {
+    const result = await renderBlocksToPdf([imageBlock(2000, 1000)], 'doc')
+    const [image] = drawnImagesMm(result.buffer)
+    expect(image.w).toBeCloseTo(180, 2)
+    expect(image.h).toBeCloseTo(90, 2)
+  })
+
+  it('regresión: un PNG de 1×1 no se estira al ancho de la página', async () => {
+    const result = await renderBlocksToPdf([imageBlock(1, 1)], 'doc')
+    const [image] = drawnImagesMm(result.buffer)
+    // Antes del arreglo medía 180 mm: todo el ancho útil de A4.
+    expect(image.w).toBeLessThan(1)
+    expect(image.w).toBeCloseTo(0.2646, 3)
+  })
+
+  it('nunca agranda una imagen chica para llenar la página', async () => {
+    const result = await renderBlocksToPdf([imageBlock(200, 100, { wmm: 20, hmm: 10 })], 'doc')
+    const [image] = drawnImagesMm(result.buffer)
+    expect(image.w).toBeCloseTo(20, 3)
+  })
+
+  it('una imagen más alta que la página se encoge y se dibuja una sola vez', async () => {
+    const result = await renderBlocksToPdf([imageBlock(100, 280, { wmm: 100, hmm: 280 })], 'doc')
+    const images = drawnImagesMm(result.buffer)
+    expect(images).toHaveLength(1)
+    expect(images[0].h).toBeCloseTo(262, 0) // 297 - TOP(20) - MARGIN(15)
+    expect(images[0].h).toBeLessThanOrEqual(262.001)
+  })
+
+  it('dibuja cada imagen del documento una sola vez', async () => {
+    const result = await renderBlocksToPdf(
+      [imageBlock(100, 50, { wmm: 30, hmm: 15 }), imageBlock(100, 50, { wmm: 60, hmm: 30 })],
+      'doc',
+    )
+    const images = drawnImagesMm(result.buffer)
+    expect(images).toHaveLength(2)
+    expect(images[0].w).toBeCloseTo(30, 3)
+    expect(images[1].w).toBeCloseTo(60, 3)
+  })
+
+  it('omite una imagen con dimensiones inválidas sin abortar el documento', async () => {
+    const result = await renderBlocksToPdf(
+      [imageBlock(0, 0), { type: 'para', runs: [{ text: 'Producto' }] }],
+      'doc',
+    )
+    expect(drawnImagesMm(result.buffer)).toHaveLength(0)
+    expect(Buffer.from(result.buffer).toString('latin1')).toContain('Producto')
+  })
+})
+
+describe('odfContentToBlocks — tamaño de visualización', () => {
+  const resolver = () => ({ type: 'image' as const, dataUri: 'data:image/png;base64,AA', format: 'PNG' as const, w: 200, h: 100 })
+
+  it('toma svg:width/svg:height del draw:frame contenedor', () => {
+    const xml = odtContent('<text:p><draw:frame svg:width="5cm" svg:height="2.5cm"><draw:image xlink:href="Pictures/x.png"/></draw:frame></text:p>')
+    const image = odfContentToBlocks(xml, resolver).find((block) => block.type === 'image') as Extract<Block, { type: 'image' }>
+    expect(image.display?.wmm).toBeCloseTo(50, 6)
+    expect(image.display?.hmm).toBeCloseTo(25, 6)
+  })
+
+  it('deja la imagen sin tamaño si el frame no lo declara', () => {
+    const xml = odtContent('<text:p><draw:frame><draw:image xlink:href="Pictures/x.png"/></draw:frame></text:p>')
+    const image = odfContentToBlocks(xml, resolver).find((block) => block.type === 'image') as Extract<Block, { type: 'image' }>
+    expect(image.display).toBeUndefined()
+  })
+
+  it('asigna a cada imagen el tamaño de su propio frame', () => {
+    const xml = odtContent(
+      '<text:p><draw:frame svg:width="2cm" svg:height="1cm"><draw:image xlink:href="Pictures/a.png"/></draw:frame></text:p>' +
+        '<text:p><draw:frame svg:width="8cm" svg:height="4cm"><draw:image xlink:href="Pictures/b.png"/></draw:frame></text:p>',
+    )
+    const images = odfContentToBlocks(xml, resolver).filter((block) => block.type === 'image') as Array<Extract<Block, { type: 'image' }>>
+    expect(images).toHaveLength(2)
+    expect(images[0].display?.wmm).toBeCloseTo(20, 6)
+    expect(images[1].display?.wmm).toBeCloseTo(80, 6)
+  })
+})
+
 describe('renderBlocksToPdf', () => {
   it('produce un PDF válido con todos los tipos de bloque', async () => {
     const blocks: Block[] = [
