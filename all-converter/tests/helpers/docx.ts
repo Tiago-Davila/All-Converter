@@ -10,8 +10,8 @@
  * Mammoth resuelve los nombres por URI de namespace, no por prefijo, así que las
  * declaraciones `xmlns:` tienen que ser las transitional exactas.
  */
+import { deflateSync } from 'node:zlib'
 import JSZip from 'jszip'
-import { pngBytes } from './odf'
 
 export const NS = {
   w: 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
@@ -41,21 +41,48 @@ function crc32(bytes: Uint8Array): number {
   return (crc ^ 0xffffffff) >>> 0
 }
 
+function chunk(type: string, data: Uint8Array): Uint8Array {
+  const out = new Uint8Array(12 + data.length)
+  const view = new DataView(out.buffer)
+  view.setUint32(0, data.length)
+  for (let i = 0; i < 4; i++) out[4 + i] = type.charCodeAt(i)
+  out.set(data, 8)
+  view.setUint32(8 + data.length, crc32(out.subarray(4, 8 + data.length)))
+  return out
+}
+
 /**
- * PNG válido con el IHDR reescrito a `w`×`h`.
+ * PNG RGB de 8 bits genuinamente válido de `w`×`h`, con su IDAT real.
  *
- * Los píxeles siguen siendo los del PNG de 1×1: alcanza para `imageSize()` (que lee el
- * IHDR) y para que cada fixture tenga un contenido distinto, que es lo que se está
- * probando. No se usa para comparar píxeles.
+ * Tiene que ser un PNG de verdad, no un IHDR parcheado: jsPDF decodifica la imagen al
+ * incrustarla y `renderBlocksToPdf` se traga los errores de `addImage` sin abortar el
+ * documento, así que una imagen inválida desaparecería del PDF en silencio y el test
+ * mediría cero imágenes en vez de fallar por la razón real.
  */
-export function pngOfSize(w: number, h: number): Uint8Array {
-  const bytes = pngBytes().slice()
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  view.setUint32(16, w)
-  view.setUint32(20, h)
-  // El CRC del IHDR cubre el nombre del chunk y sus datos: bytes 12..28.
-  view.setUint32(29, crc32(bytes.subarray(12, 29)))
-  return bytes
+export function pngOfSize(w: number, h: number, tint = 0): Uint8Array {
+  const header = new Uint8Array(13)
+  const view = new DataView(header.buffer)
+  view.setUint32(0, w)
+  view.setUint32(4, h)
+  header[8] = 8 // profundidad de bit
+  header[9] = 2 // color type 2 = RGB
+  const raw = new Uint8Array(h * (1 + w * 3))
+  for (let y = 0; y < h; y++) {
+    const row = y * (1 + w * 3)
+    raw[row] = 0 // filtro None
+    for (let x = 0; x < w; x++) {
+      raw[row + 1 + x * 3] = (x + tint) & 0xff
+      raw[row + 2 + x * 3] = (y + tint) & 0xff
+      raw[row + 3 + x * 3] = tint & 0xff
+    }
+  }
+  const signature = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  const parts = [signature, chunk('IHDR', header), chunk('IDAT', new Uint8Array(deflateSync(raw))), chunk('IEND', new Uint8Array(0))]
+  const total = parts.reduce((sum, part) => sum + part.length, 0)
+  const png = new Uint8Array(total)
+  let offset = 0
+  for (const part of parts) { png.set(part, offset); offset += part.length }
+  return png
 }
 
 // ── Piezas de document.xml ───────────────────────────────────────────────────

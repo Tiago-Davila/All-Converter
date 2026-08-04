@@ -57,9 +57,15 @@ se cierra sin su test. `[P]` = paralelizable tras sus dependencias.
 - **T010** — `src/workers/office-operations.ts`: `docxPdf` abre el `.docx` con JSZip, arma el
   `DisplayLookup` y se lo pasa a `htmlToBlocks`; `odtPdf` sin cambios de firma. Degrada a
   FR-002 si el zip no se puede leer. Depende de T005, T007. (FR-005, FR-008, FR-009)
-- **T011 [P]** — `tests/fixtures/image.docx` + casos en `tests/converters/docx-to-pdf.test.ts`
-  y `tests/converters/odt-to-pdf.test.ts`: end-to-end con dimensiones reales, incluida la
-  variante con gráfico previo. Depende de T010. (FR-011)
+- **T011 [P]** — Casos end-to-end con dimensiones reales en
+  `tests/converters/docx-to-pdf.test.ts` y `tests/converters/odt-to-pdf.test.ts`, incluida la
+  variante con gráfico previo. Los paquetes se arman con `packDocx()`/`buildOdt()`, igual que
+  ya hace el proyecto con los fixtures ODF: no hay ningún DOCX con imágenes escrito por Word
+  en `tests/fixtures/` y no se puede generar uno auténtico desde este entorno. `pngOfSize()`
+  produce PNG **realmente válidos** (IDAT comprimido con zlib), no un IHDR parcheado: jsPDF
+  decodifica la imagen al incrustarla y `renderBlocksToPdf` se traga los errores de
+  `addImage`, así que una imagen inválida desaparecería del PDF en silencio y el test mediría
+  cero imágenes en vez de fallar por la razón real. Depende de T010. (FR-011)
 - **T012 [P]** — `src/converters/docx-to-pdf.ts` y `src/converters/odt-to-pdf.ts`: texto de
   `limitation` que declare qué se conserva y qué no (posición de flotantes, recorte, imágenes
   en tablas). Depende de T010. (FR-010)
