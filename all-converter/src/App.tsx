@@ -19,19 +19,27 @@ export function App() {
   const [dragOver, setDragOver] = useState(false)
   const [hovering, setHovering] = useState(false)
   const [batchProgress, setBatchProgress] = useState<number | undefined>(undefined)
+  const [skippedByScan, setSkippedByScan] = useState(0)
   const entriesRef = useRef<FileEntry[]>([])
   // Posición del cursor para el brillo del shader (FR-003), sin re-renders.
   const focusRef = useRef<readonly [number, number]>([0.5, 0.42])
+  // Los aportes se encadenan: dos arrastres seguidos no pueden leer el mismo snapshot de
+  // entriesRef y pasarse del tope (006 FR-005).
+  const intakeChain = useRef<Promise<void>>(Promise.resolve())
 
-  const addFiles = async (incoming: IncomingFile[]) => {
-    if (!incoming.length) return
-    const added = await intakeFiles(incoming, entriesRef.current)
-    entriesRef.current = [...entriesRef.current, ...added]
-    setEntries(entriesRef.current)
-    // Sonido por gesto, nunca por archivo (FR-029a/b): si el gesto produjo
-    // rechazos suena el de error; si todo entró, el de drop.
-    if (added.some((entry) => entry.state === 'rejected')) playSound('reject')
-    else if (added.length > 0) playSound('drop')
+  const addFiles = (incoming: IncomingFile[], skipped = 0) => {
+    if (!incoming.length && !skipped) return
+    intakeChain.current = intakeChain.current.then(async () => {
+      if (skipped) setSkippedByScan((current) => current + skipped)
+      if (!incoming.length) return
+      const added = await intakeFiles(incoming, entriesRef.current)
+      entriesRef.current = [...entriesRef.current, ...added]
+      setEntries(entriesRef.current)
+      // Sonido por gesto, nunca por archivo (FR-029a/b): si el gesto produjo
+      // rechazos suena el de error; si todo entró, el de drop.
+      if (added.some((entry) => entry.state === 'rejected')) playSound('reject')
+      else if (added.length > 0) playSound('drop')
+    })
   }
 
   const removeEntry = useCallback((id: string) => {
@@ -42,6 +50,7 @@ export function App() {
   const clearEntries = useCallback(() => {
     entriesRef.current = []
     setEntries(entriesRef.current)
+    setSkippedByScan(0)
   }, [])
 
   // Página aparte del redimensionador (003 FR-015). Los hooks de arriba ya
@@ -95,7 +104,7 @@ export function App() {
           <Header />
           <Dropzone
             hasFiles={hasFiles}
-            onFiles={(files) => { void addFiles(files) }}
+            onFiles={(files, skipped) => { addFiles(files, skipped) }}
             background={heroMode ? undefined : shader}
             onDragActive={setDragOver}
             onHoverChange={setHovering}
@@ -106,6 +115,7 @@ export function App() {
             onRemove={removeEntry}
             onClear={clearEntries}
             onBatchActivity={setBatchProgress}
+            skippedByScan={skippedByScan}
           />
           <p className="ct-footnote">
             Imágenes · Documentos · Video · Audio — todo se convierte en tu
