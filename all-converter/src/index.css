@@ -778,6 +778,50 @@ a:hover { color: var(--ct-violet-deep); }
 
 .ct-reject-reason { font-size: 11px; color: var(--ct-error-ink); margin-top: 2px; }
 
+/* ── Grupos de carpeta ─────────────────────────────────────────────────────── */
+.ct-folder-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: ct-fade-up .4s ease both;
+}
+
+.ct-folder-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 4px 4px;
+  flex-wrap: wrap;
+}
+
+.ct-folder-icon { color: var(--ct-muted); display: flex; align-items: center; }
+
+.ct-folder-name {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--ct-ink);
+  font-family: var(--ct-mono);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ct-folder-count { font-size: 11px; color: var(--ct-muted); font-family: var(--ct-mono); }
+
+.ct-folder-zip-btn { margin-left: auto; }
+
+.ct-group-folder-category {
+  margin-left: 20px;
+  border-left: 2px solid var(--ct-border);
+  border-radius: 0 16px 16px 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.ct-folder-format-select { margin-left: auto; }
+
 /* ── Barra ZIP (mockup) ────────────────────────────────────────────────────── */
 .ct-zipbar {
   display: flex;

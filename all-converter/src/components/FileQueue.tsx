@@ -7,7 +7,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import type { ConversionResult, Converter, FileEntry } from '../converters/types'
-import { getAvailableConverters, getConverterTargets } from '../converters/registry'
+import { getAvailableConverters, getCommonTargets, getConverterTargets, type CommonChoice } from '../converters/registry'
 import { MAX_BATCH_FILES, MAX_SCAN_FILES } from '../lib/directory-input'
 import { exceedsFileLimit, fileLimitMessage } from '../lib/file-limits'
 import { concurrencyForConverter, runWithConcurrency } from '../lib/job-scheduler'
@@ -52,7 +52,44 @@ async function optionsFor(choice: Choice, entry: FileEntry, row: RowOptions): Pr
   return options
 }
 
-// ── Categorías (mockup: Imágenes / Documentos / Video / Audio) ───────────────
+// ── Agrupación por carpeta ────────────────────────────────────────────────────
+
+/** Extrae el nombre de carpeta del relativePath (primer segmento), o null si es archivo suelto. */
+function folderOf(entry: FileEntry): string | null {
+  if (!entry.relativePath) return null
+  const parts = entry.relativePath.split('/')
+  // relativePath = "carpeta/archivo.ext" → partes[0] = "carpeta"
+  // Si solo hay un segmento, es un archivo suelto (no está dentro de subdirectorio)
+  return parts.length > 1 ? parts[0] : null
+}
+
+interface FolderCategoryGroup { category: Category; list: FileEntry[] }
+interface FolderGroup { folderName: string; byCategory: FolderCategoryGroup[] }
+
+/** Archivos con carpeta, agrupados por carpeta y luego por categoría. */
+function buildFolderGroups(entries: readonly FileEntry[]): FolderGroup[] {
+  const map = new Map<string, FileEntry[]>()
+  for (const entry of entries) {
+    const folder = folderOf(entry)
+    if (!folder) continue
+    const list = map.get(folder) ?? []
+    list.push(entry)
+    map.set(folder, list)
+  }
+  return [...map.entries()].map(([folderName, folderEntries]) => ({
+    folderName,
+    byCategory: CATEGORY_ORDER
+      .map((category) => ({ category, list: folderEntries.filter((e) => categoryOf(e) === category) }))
+      .filter((g) => g.list.length > 0),
+  }))
+}
+
+/** Archivos sin carpeta (relativePath vacío o de un solo segmento). */
+function looseEntries(entries: readonly FileEntry[]): FileEntry[] {
+  return entries.filter((entry) => folderOf(entry) === null)
+}
+
+
 
 type Category = 'image' | 'document' | 'video' | 'audio'
 const CATEGORY_ORDER: readonly Category[] = ['image', 'document', 'video', 'audio']
@@ -108,6 +145,11 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
   const [zipping, setZipping] = useState(false)
   const [zipPercent, setZipPercent] = useState(0)
   const [zipError, setZipError] = useState<string>()
+  // Selectores de formato por carpeta+categoría: clave = "carpeta::categoría"
+  const [folderSelection, setFolderSelection] = useState<Record<string, string>>({})
+  const [folderZipping, setFolderZipping] = useState<Record<string, boolean>>({})
+  const [folderZipPercent, setFolderZipPercent] = useState<Record<string, number>>({})
+  const [folderZipError, setFolderZipError] = useState<Record<string, string>>({})
   const [announcement, setAnnouncement] = useState<Announcement | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const downloadsRef = useRef<Record<string, RowDownload[]>>({})
@@ -190,6 +232,55 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
       }
     } finally {
       setZipping(false)
+    }
+  }
+
+  /** Clave para el selector de carpeta+categoría */
+  const folderCatKey = (folderName: string, category: Category) => `${folderName}::${category}`
+
+  /** Aplica un choiceKey a todos los archivos del grupo carpeta+categoría (olvida resultados anteriores). */
+  const applyFolderFormat = (folderName: string, category: Category, value: string) => {
+    const affected = ready.filter((e) => folderOf(e) === folderName && categoryOf(e) === category)
+    if (!affected.length) return
+    playSound('toggle')
+    setFolderSelection((prev) => ({ ...prev, [folderCatKey(folderName, category)]: value }))
+    setSelection((prev) => {
+      const next = { ...prev }
+      for (const entry of affected) next[entry.id] = value
+      return next
+    })
+    for (const entry of affected) forgetResult(entry.id)
+  }
+
+  /** Descarga un ZIP solo con los resultados de una carpeta+categoría. */
+  const downloadFolderZip = async (folderName: string, folderEntries: FileEntry[]) => {
+    const key = folderName
+    const present = new Set(folderEntries.map((e) => e.id))
+    const packaged = Object.entries(resultsRef.current)
+      .filter(([id]) => present.has(id))
+      .flatMap(([, list]) => list)
+    if (!packaged.length || folderZipping[key]) return
+    setFolderZipping((prev) => ({ ...prev, [key]: true }))
+    setFolderZipPercent((prev) => ({ ...prev, [key]: 0 }))
+    setFolderZipError((prev) => { const next = { ...prev }; delete next[key]; return next })
+    try {
+      const delivery = await saveZip(packaged, undefined, (pct) =>
+        setFolderZipPercent((prev) => ({ ...prev, [key]: pct })))
+      if (delivery.kind === 'blob') {
+        const url = URL.createObjectURL(delivery.blob)
+        const anchor = document.createElement('a')
+        anchor.href = url
+        anchor.download = `${folderName}.zip`
+        anchor.click()
+        setTimeout(() => URL.revokeObjectURL(url), 0)
+      }
+      playSound('zip')
+    } catch (thrown) {
+      if (!(thrown instanceof DOMException && thrown.name === 'AbortError')) {
+        setFolderZipError((prev) => ({ ...prev, [key]: thrown instanceof Error ? thrown.message : 'No se pudo armar el ZIP.' }))
+      }
+    } finally {
+      setFolderZipping((prev) => ({ ...prev, [key]: false }))
     }
   }
 
@@ -289,9 +380,14 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
   const folderCount = new Set(ready.map((entry) => entry.relativePath?.split('/')[0]).filter(Boolean)).size
   const countLabel = `${ready.length} ${ready.length === 1 ? 'archivo' : 'archivos'}${folderCount ? ` · ${folderCount} ${folderCount === 1 ? 'carpeta' : 'carpetas'}` : ''}`
 
+  // Archivos sueltos (sin carpeta) agrupados por categoría — comportamiento original
+  const loose = looseEntries(ready)
   const groupsByCategory = CATEGORY_ORDER
-    .map((category) => ({ category, meta: CATEGORY_META[category], list: ready.filter((entry) => categoryOf(entry) === category) }))
+    .map((category) => ({ category, meta: CATEGORY_META[category], list: loose.filter((entry) => categoryOf(entry) === category) }))
     .filter((group) => group.list.length > 0)
+
+  // Archivos con carpeta — agrupados por carpeta y luego por categoría
+  const folderGroups = buildFolderGroups(ready)
 
   const renderRow = (entry: FileEntry) => {
     const item = items[entry.id]
@@ -438,6 +534,111 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
     )
   }
 
+  /**
+   * Renderiza un grupo de categoría (imagen/doc/video/audio) dentro de una carpeta.
+   * Incluye un selector de formato que aplica a todos los archivos del grupo.
+   */
+  const renderFolderCategoryGroup = (folderName: string, category: Category, list: FileEntry[]) => {
+    const meta = CATEGORY_META[category]
+    const key = folderCatKey(folderName, category)
+    const commonChoices: readonly CommonChoice[] = getCommonTargets(list)
+    const currentValue = folderSelection[key] ?? ''
+    const limitations = [...new Set(list.map((entry) => chosen(entry)?.converter.limitation).filter(Boolean))]
+    const manyConverters = new Set(commonChoices.map((c) => c.target)).size !== commonChoices.length
+
+    return (
+      <div className="ct-group ct-group-folder-category" key={`${folderName}::${category}`}>
+        <div className="ct-group-head">
+          <div className="ct-group-id">
+            <span className="ct-group-glyph" aria-hidden="true"><Icon name={meta.icon} size={16} /></span>
+            <div>
+              <div className="ct-group-name">
+                {meta.name}
+                {limitations.length > 0 && (
+                  <span className="ct-badge-fidelity" title={limitations.join(' ')}>
+                    <Icon name="info" size={12} />
+                    Fidelidad parcial
+                  </span>
+                )}
+              </div>
+              <div className="ct-group-count">{list.length} {list.length === 1 ? 'archivo' : 'archivos'}</div>
+            </div>
+          </div>
+
+          {/* Selector de formato para toda la categoría dentro de la carpeta */}
+          {commonChoices.length > 0 && (
+            <span className="ct-select-wrap ct-folder-format-select">
+              <select
+                className="ct-select"
+                aria-label={`Formato para todas las ${meta.name.toLowerCase()} de ${folderName}`}
+                value={currentValue}
+                onChange={(event) => applyFolderFormat(folderName, category, event.target.value)}
+                disabled={running}
+              >
+                <option value="">Aplicar formato a todas…</option>
+                {commonChoices.map((c) => {
+                  const ck = choiceKey(c)
+                  return <option key={ck} value={ck}>{manyConverters ? `${c.target.toUpperCase()} — ${c.converter.label}` : c.target.toUpperCase()}</option>
+                })}
+              </select>
+              <Icon name="chev" size={14} className="ct-select-chev" />
+            </span>
+          )}
+          {commonChoices.length === 0 && (
+            <span role="note" className="ct-note"><Icon name="info" size={13} />Sin formato común</span>
+          )}
+        </div>
+
+        {limitations.map((limitation) => (
+          <div className="ct-note-block" key={limitation}>
+            <p role="note" className="ct-note"><Icon name="info" size={14} />{limitation}</p>
+          </div>
+        ))}
+        {list.map(renderRow)}
+      </div>
+    )
+  }
+
+  /** Renderiza una carpeta completa: nombre + ZIP inline + sub-grupos por categoría. */
+  const renderFolderGroup = (group: FolderGroup) => {
+    const allFolderEntries = group.byCategory.flatMap((g) => g.list)
+    const folderDoneTotal = allFolderEntries.filter((e) => items[e.id]?.state === 'completed').length
+    const isZipping = folderZipping[group.folderName] ?? false
+    const zipPct = folderZipPercent[group.folderName] ?? 0
+    const zipErr = folderZipError[group.folderName]
+
+    return (
+      <div className="ct-folder-group" key={group.folderName}>
+        <div className="ct-folder-head">
+          <span className="ct-folder-icon" aria-hidden="true"><Icon name="folder" size={18} /></span>
+          <span className="ct-folder-name">{group.folderName}</span>
+          <span className="ct-folder-count">{allFolderEntries.length} {allFolderEntries.length === 1 ? 'archivo' : 'archivos'}</span>
+
+          {folderDoneTotal > 0 && !running && (
+            <button
+              type="button"
+              className="ct-btn ct-btn-dark ct-btn-sm ct-folder-zip-btn"
+              onClick={() => { void downloadFolderZip(group.folderName, allFolderEntries) }}
+              disabled={isZipping}
+              aria-label={`Descargar ${group.folderName} como ZIP`}
+            >
+              <Icon name="zip" size={14} />
+              {isZipping ? `${zipPct}%` : 'Descargar ZIP'}
+            </button>
+          )}
+        </div>
+
+        {zipErr && (
+          <p role="alert" className="ct-row-error-cause">{zipErr} Podés descargar los archivos de a uno.</p>
+        )}
+
+        {group.byCategory.map((catGroup) =>
+          renderFolderCategoryGroup(group.folderName, catGroup.category, catGroup.list)
+        )}
+      </div>
+    )
+  }
+
   return (
     <section aria-label="Cola de archivos" className="ct-queue">
       <LiveRegion announcement={announcement} />
@@ -477,6 +678,10 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
         </p>
       )}
 
+      {/* Carpetas: cada carpeta con sus subcategorías y selector de formato masivo */}
+      {folderGroups.map(renderFolderGroup)}
+
+      {/* Archivos sueltos (sin carpeta): comportamiento original por categoría */}
       {groupsByCategory.map(({ category, meta, list }) => {
         const limitations = [...new Set(list.map((entry) => chosen(entry)?.converter.limitation).filter(Boolean))]
         return (
