@@ -1,5 +1,5 @@
 import { isValidPair } from '../lib/image-resize'
-import type { WorkerInput, WorkerStartRequest } from './types'
+import type { WorkerInput, WorkerStartRequest, ZipStartRequest } from './types'
 
 const ext = (input: WorkerInput) => input.name.split('.').pop()?.toLowerCase() ?? ''
 function inputs(request: WorkerStartRequest, minimum = 1, maximum = minimum) { if (request.inputs.length < minimum || request.inputs.length > maximum) throw new Error(`${request.operation} requiere ${minimum === maximum ? minimum : `${minimum}-${maximum}`} archivo(s).`) }
@@ -55,4 +55,4 @@ export function validateMediaRequest(request: WorkerStartRequest) {
   throw new Error(`Operación multimedia desconocida: ${request.operation}.`)
 }
 
-export function validateZipRequest(request: WorkerStartRequest) { if (request.operation !== 'zip-create') throw new Error(`Operación ZIP desconocida: ${request.operation}.`); if (!request.inputs.length) throw new Error('No hay archivos para incluir en el ZIP.'); if (request.inputs.some((input) => !input.name.trim())) throw new Error('Todos los archivos del ZIP necesitan un nombre.') }
+export function validateZipRequest(request: ZipStartRequest) { if (request.operation !== 'zip-create') throw new Error(`Operación ZIP desconocida: ${request.operation}.`); if (!request.inputs.length) throw new Error('No hay archivos para incluir en el ZIP.'); if (request.inputs.some((input) => !input.name.trim())) throw new Error('Todos los archivos del ZIP necesitan un nombre.') }
