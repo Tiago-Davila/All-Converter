@@ -8,9 +8,10 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ConversionResult, Converter, FileEntry } from '../converters/types'
 import { getAvailableConverters, getConverterTargets } from '../converters/registry'
+import { MAX_BATCH_FILES, MAX_SCAN_FILES } from '../lib/directory-input'
 import { exceedsFileLimit, fileLimitMessage } from '../lib/file-limits'
 import { concurrencyForConverter, runWithConcurrency } from '../lib/job-scheduler'
-import { createZip } from '../lib/zip'
+import { saveZip } from '../lib/zip'
 import { Icon, type IconName } from '../ui/components/icons'
 import { LiveRegion, type Announcement } from '../ui/a11y/LiveRegion'
 import { playSound } from '../ui/sound/player'
@@ -84,32 +85,42 @@ export interface FileQueueProps {
   onClear?: () => void
   /** Progreso del lote para el fondo animado: 0–1 corriendo, undefined en reposo. */
   onBatchActivity?: (progress: number | undefined) => void
+  /** Archivos que el recorrido de carpetas no exploró por el techo de MAX_SCAN_FILES. */
+  skippedByScan?: number
 }
 
-export function FileQueue({ entries, onRemove, onClear, onBatchActivity }: FileQueueProps) {
+/** Un rechazo por cupo es siempre el mismo texto: se detecta por prefijo para agruparlos. */
+const QUOTA_REASON_PREFIX = 'Límite de'
+
+export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skippedByScan = 0 }: FileQueueProps) {
   const ready = entries.filter((entry) => entry.state !== 'rejected')
-  const rejected = entries.filter((entry) => entry.state === 'rejected')
+  const allRejected = entries.filter((entry) => entry.state === 'rejected')
+  // Los rechazos por cupo se colapsan en una fila resumen: 200 filas rojas idénticas son
+  // ruido, no información (006 FR-004). Los demás conservan su fila, que sí es accionable.
+  const overQuota = allRejected.filter((entry) => entry.rejectionReason?.startsWith(QUOTA_REASON_PREFIX))
+  const rejected = allRejected.filter((entry) => !entry.rejectionReason?.startsWith(QUOTA_REASON_PREFIX))
   const [selection, setSelection] = useState<Record<string, string>>({})
   const [rowOptions, setRowOptions] = useState<Record<string, RowOptions>>({})
   const [items, setItems] = useState<Record<string, BatchItem>>({})
   const [downloads, setDownloads] = useState<Record<string, RowDownload[]>>({})
   const [downloadedIds, setDownloadedIds] = useState<Record<string, boolean>>({})
   const [running, setRunning] = useState(false)
-  const [zipUrl, setZipUrl] = useState<string>()
+  const [zipping, setZipping] = useState(false)
+  const [zipPercent, setZipPercent] = useState(0)
+  const [zipError, setZipError] = useState<string>()
   const [announcement, setAnnouncement] = useState<Announcement | null>(null)
   const abortRef = useRef<AbortController | null>(null)
-  const zipUrlRef = useRef<string | undefined>(undefined)
   const downloadsRef = useRef<Record<string, RowDownload[]>>({})
-  // Resultados crudos por archivo, acumulados entre corridas, para el ZIP "Descargar todo".
-  const resultsRef = useRef<Record<string, { name: string; buffer: ArrayBuffer; relativePath?: string }[]>>({})
+  // Resultados por archivo, acumulados entre corridas, para el ZIP "Descargar todo".
+  // Se guardan como Blob y no como ArrayBuffer: el navegador respalda los blobs grandes en
+  // disco, así que 200 resultados no viven en el heap (006 FR-006).
+  const resultsRef = useRef<Record<string, { name: string; blob: Blob; relativePath?: string }[]>>({})
 
   useEffect(() => () => {
     abortRef.current?.abort()
-    if (zipUrlRef.current) URL.revokeObjectURL(zipUrlRef.current)
     Object.values(downloadsRef.current).flat().forEach((d) => URL.revokeObjectURL(d.url))
   }, [])
 
-  useEffect(() => { zipUrlRef.current = zipUrl }, [zipUrl])
   useEffect(() => { downloadsRef.current = downloads }, [downloads])
 
   const chosen = (entry: FileEntry): Choice | undefined => choicesFor(entry).find((choice) => choiceKey(choice) === selection[entry.id])
@@ -134,9 +145,52 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity }: FileQ
   }
 
   const registerResults = (entry: FileEntry, results: ConversionResult[]) => {
-    resultsRef.current[entry.id] = results.map((result) => ({ name: result.name, buffer: result.buffer, relativePath: entry.relativePath }))
-    const rows = results.map((result) => ({ url: URL.createObjectURL(new Blob([result.buffer], { type: result.mime })), name: result.name }))
-    setDownloads((current) => ({ ...current, [entry.id]: rows }))
+    // Un único Blob por resultado: alimenta la descarga individual Y el ZIP. El ArrayBuffer
+    // que llegó del worker queda sin referencias y es elegible para GC en el acto.
+    const blobs = results.map((result) => ({ name: result.name, blob: new Blob([result.buffer], { type: result.mime }), relativePath: entry.relativePath }))
+    resultsRef.current[entry.id] = blobs
+    setDownloads((current) => ({ ...current, [entry.id]: blobs.map(({ blob, name }) => ({ url: URL.createObjectURL(blob), name })) }))
+  }
+
+  /** Entradas del ZIP: todo lo convertido que siga en la cola, en el orden de la cola. */
+  const packagedEntries = () => {
+    const present = new Set(entries.map((entry) => entry.id))
+    return Object.entries(resultsRef.current)
+      .filter(([id]) => present.has(id))
+      .flatMap(([, list]) => list)
+  }
+
+  /**
+   * Se empaqueta al hacer clic, no al terminar el lote: `showSaveFilePicker` exige el gesto
+   * del usuario, y así no se arma un ZIP que nadie descarga (FR-010).
+   */
+  const downloadAll = async () => {
+    const packaged = packagedEntries()
+    if (!packaged.length || zipping) return
+    setZipping(true)
+    setZipPercent(0)
+    setZipError(undefined)
+    try {
+      const delivery = await saveZip(packaged, undefined, setZipPercent)
+      if (delivery.kind === 'blob') {
+        const url = URL.createObjectURL(delivery.blob)
+        const anchor = document.createElement('a')
+        anchor.href = url
+        anchor.download = 'convertitodo.zip'
+        anchor.click()
+        // El navegador ya tomó los bytes; liberar la referencia en el siguiente tick.
+        setTimeout(() => URL.revokeObjectURL(url), 0)
+      }
+      playSound('zip')
+    } catch (thrown) {
+      // Que el empaquetado falle nunca puede dejar la UI inutilizable: las descargas
+      // individuales siguen disponibles (FR-009).
+      if (!(thrown instanceof DOMException && thrown.name === 'AbortError')) {
+        setZipError(thrown instanceof Error ? thrown.message : 'No se pudo armar el ZIP.')
+      }
+    } finally {
+      setZipping(false)
+    }
   }
 
   const convertAll = async () => {
@@ -145,7 +199,7 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity }: FileQ
     abortRef.current = controller
     setRunning(true)
     setAnnouncement(null)
-    setZipUrl((previous) => { if (previous) URL.revokeObjectURL(previous); return undefined })
+    setZipError(undefined)
     // Preservar lo ya convertido: solo se limpian y encolan los pendientes.
     setDownloads((current) => {
       const next = { ...current }
@@ -159,6 +213,10 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity }: FileQ
     let doneCount = 0
     let errorCount = 0
 
+    // Todo el cuerpo va en try/finally: pase lo que pase, el lote deja de estar "corriendo".
+    // Antes `setRunning(false)` estaba en el camino feliz y un fallo posterior dejaba la UI
+    // trabada con "Cancelar lote" para siempre (006 FR-009).
+    try {
     // Los conversores de lote (p. ej. varias imágenes a un PDF) agrupan los archivos que
     // comparten exactamente el mismo destino; el resto se convierte archivo por archivo.
     const groups = new Map<string, { choice: Choice; entries: FileEntry[] }>()
@@ -207,16 +265,9 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity }: FileQ
         else { updateItem(entry.id, { state: 'error', error: thrown instanceof Error ? thrown.message : 'La conversión falló por un error inesperado.' }); errorCount += 1 }
       }
     }), singles.length ? concurrency : 2, controller.signal)
-
-    // El ZIP incluye TODO lo convertido hasta ahora (corridas previas + esta), no solo este lote.
-    const packaged = Object.entries(resultsRef.current)
-      .filter(([id]) => entries.some((entry) => entry.id === id))
-      .flatMap(([, list]) => list)
-    if (packaged.length) {
-      const buffer = await createZip(packaged, controller.signal)
-      setZipUrl(URL.createObjectURL(new Blob([buffer], { type: 'application/zip' })))
+    } finally {
+      setRunning(false)
     }
-    setRunning(false)
 
     // Fin de cola: UN solo sonido para todo el lote, nunca por archivo (FR-029).
     // Cancelar todo no es un logro: sin terminados ni errores no suena nada.
@@ -458,6 +509,25 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity }: FileQ
         )
       })}
 
+      {/* Rechazos por cupo y por techo de exploración: una sola fila resumen (006 FR-004) */}
+      {(overQuota.length > 0 || skippedByScan > 0) && (
+        <div className="ct-group ct-group-unsupported">
+          <div className="ct-group-head">
+            <div className="ct-group-id">
+              <span className="ct-group-glyph" aria-hidden="true"><Icon name="info" size={16} /></span>
+              <div>
+                <div className="ct-group-name">No entraron en la cola</div>
+                <div className="ct-group-count" role="alert">
+                  {overQuota.length > 0 && `${overQuota.length} ${overQuota.length === 1 ? 'archivo superó' : 'archivos superaron'} el tope de ${MAX_BATCH_FILES} de la cola.`}
+                  {overQuota.length > 0 && skippedByScan > 0 && ' '}
+                  {skippedByScan > 0 && `${skippedByScan} ${skippedByScan === 1 ? 'archivo quedó' : 'archivos quedaron'} sin explorar: la carpeta supera los ${MAX_SCAN_FILES} archivos.`}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Vista agrupada de rechazos (FR-012): sin selector, sin convertir, sin sonidos */}
       {rejected.length > 0 && (
         <div className="ct-group ct-group-unsupported">
@@ -494,20 +564,36 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity }: FileQ
         </ul>
       )}
 
-      {zipUrl && (
+      {doneTotal > 0 && !running && (
         <div className="ct-zipbar" role="region" aria-label="Descarga de todos los archivos">
           <div className="ct-zipbar-info">
             <span className="ct-zipbar-glyph" aria-hidden="true"><Icon name="zip" size={20} /></span>
             <div>
               <div className="ct-zipbar-title">Descargar todo</div>
-              <div className="ct-zipbar-sub">{doneTotal} {doneTotal === 1 ? 'listo' : 'listos'} · empaquetados en tu navegador</div>
+              <div className="ct-zipbar-sub">
+                {zipping
+                  ? `Empaquetando… ${zipPercent}%`
+                  : `${doneTotal} ${doneTotal === 1 ? 'listo' : 'listos'} · empaquetados en tu navegador`}
+              </div>
             </div>
           </div>
-          <a className="ct-zipbar-link" href={zipUrl} download="convertitodo.zip" onClick={() => playSound('zip')}>
+          <button
+            type="button"
+            className="ct-zipbar-link"
+            onClick={() => { void downloadAll() }}
+            disabled={zipping}
+          >
             <Icon name="download" size={16} />
-            Descargar ZIP
-          </a>
+            {zipping ? 'Empaquetando…' : 'Descargar ZIP'}
+          </button>
         </div>
+      )}
+
+      {/* El ZIP puede fallar sin que eso invalide las descargas individuales (FR-009). */}
+      {zipError && (
+        <p role="alert" className="ct-row-error-cause">
+          {zipError} Podés seguir descargando los archivos de a uno.
+        </p>
       )}
     </section>
   )
