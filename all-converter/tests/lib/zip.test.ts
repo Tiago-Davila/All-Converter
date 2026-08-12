@@ -100,6 +100,30 @@ describe('zip', () => {
     expect(live).toBe(0)
   })
 
+  /**
+   * El worker transfiere el buffer de cada trozo (`postMessage(..., [chunk.buffer])`), lo que
+   * lo deja *detached* en el emisor. Si el generador vuelve a mirar `chunk.length` después de
+   * emitirlo, lee 0 y escribe un directorio central con tamaños y offsets mentirosos: el ZIP
+   * abre "bien" a simple vista y ningún lector puede extraerlo.
+   */
+  it('sobrevive a que el consumidor transfiera cada trozo (T013)', async () => {
+    const inputs = Array.from({ length: 5 }, (_, index) => ({
+      name: `archivo-${index}.txt`,
+      blob: blob(`contenido ${index} `.repeat(20)),
+    }))
+
+    const copies: Uint8Array[] = []
+    for await (const chunk of streamZip(inputs)) {
+      copies.push(new Uint8Array(chunk))
+      // Lo mismo que le hace el worker al trozo apenas lo emite.
+      structuredClone(chunk.buffer, { transfer: [chunk.buffer] })
+    }
+
+    const zip = await JSZip.loadAsync(await new Blob(copies as BlobPart[]).arrayBuffer())
+    expect(Object.keys(zip.files)).toHaveLength(5)
+    await expect(zip.file('archivo-3.txt')?.async('string')).resolves.toBe('contenido 3 '.repeat(20))
+  })
+
   it('avisa en vez de emitir un ZIP corrupto por encima de 4 GB (T013)', async () => {
     const huge = { name: 'enorme.bin', blob: { size: 5_000_000_000 } as unknown as Blob }
     const generator = streamZip([huge])

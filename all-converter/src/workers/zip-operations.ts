@@ -109,17 +109,25 @@ export async function* streamZip(inputs: readonly ZipInput[]): AsyncGenerator<Ui
     const crc = crc32(bytes)
 
     const header = localHeader(name, crc, bytes.length)
+    // Los tamaños se guardan ANTES de emitir: el consumidor transfiere el buffer del trozo
+    // (`postMessage(..., [chunk.buffer])`) y eso deja la vista en length 0. Mirar `.length`
+    // después del yield daba un directorio central con tamaños y offsets en cero, o sea un
+    // ZIP que abre pero del que nada se puede extraer.
+    const headerLength = header.length
+    const size = bytes.length
+
     yield header
     yield bytes
 
-    central.push({ name, crc, size: bytes.length, offset })
-    offset += header.length + bytes.length
+    central.push({ name, crc, size, offset })
+    offset += headerLength + size
   }
 
   const directoryOffset = offset
   let directorySize = 0
   for (const entry of central) {
     const record = centralHeader(entry)
+    // Misma razón que arriba: se mide antes de emitirlo.
     directorySize += record.length
     yield record
   }
