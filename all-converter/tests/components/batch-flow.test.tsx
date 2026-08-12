@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FileEntry } from '../../src/converters/types'
 import { FileQueue } from '../../src/components/FileQueue'
+import { WATCHDOG_MS } from '../../src/lib/job-scheduler'
 import { controlledJobs, converterCalls, queueEntry, resetBatchDoubles } from '../helpers/batch'
 
 vi.mock('../../src/converters/registry', async () => (await import('../helpers/batch')).makeRegistryModule())
@@ -120,5 +121,51 @@ describe('flujo de lote', () => {
     expect(screen.getByText(/control-1\.png: cancelled/)).toBeTruthy()
     // El resultado previo sobrevive: la descarga del ZIP sigue ofrecida.
     expect(screen.getByRole('button', { name: 'Descargar ZIP' })).toBeTruthy()
+  })
+})
+
+describe('watchdog por archivo (FR-015)', () => {
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers() })
+
+  /** Deja correr las promesas pendientes sin dejar de usar timers falsos. */
+  const flush = async (ms = 0) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms) }) }
+
+  it('aborta el archivo que deja de reportar avance y sigue con el resto', async () => {
+    render(<FileQueue entries={[queueEntry('control-colgado.png'), queueEntry('a.png')]} />)
+    chooseTarget('control-colgado.png', 'JPG')
+    chooseTarget('a.png', 'JPG')
+    fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
+
+    await flush()
+    expect(controlledJobs.get('control-colgado.png')).toBeTruthy()
+    // El otro archivo del lote no espera al colgado.
+    expect(screen.getByText(/a\.png: completed/)).toBeTruthy()
+
+    await flush(WATCHDOG_MS)
+
+    expect(screen.getByText(/control-colgado\.png: error/)).toBeTruthy()
+    expect(screen.getByRole('alert').textContent).toContain('inactividad')
+    // El lote terminó: ya no está corriendo.
+    expect(screen.queryByRole('button', { name: 'Cancelar lote' })).toBeNull()
+  })
+
+  it('no aborta al archivo que sigue reportando avance', async () => {
+    render(<FileQueue entries={[queueEntry('control-vivo.png')]} />)
+    chooseTarget('control-vivo.png', 'JPG')
+    fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
+    await flush()
+
+    // Tres cuartos del plazo, un latido de progreso, y otra vez tres cuartos: sin el reinicio
+    // del plazo esto ya lo habría abortado.
+    await flush(WATCHDOG_MS * 0.75)
+    act(() => { controlledJobs.get('control-vivo.png')!.emitProgress(50) })
+    await flush(WATCHDOG_MS * 0.75)
+
+    expect(screen.getByText(/control-vivo\.png: converting/)).toBeTruthy()
+
+    act(() => { controlledJobs.get('control-vivo.png')!.finish() })
+    await flush()
+    expect(screen.getByText(/control-vivo\.png: completed/)).toBeTruthy()
   })
 })

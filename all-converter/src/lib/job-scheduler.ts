@@ -1,7 +1,27 @@
 import type { Converter } from '../converters/types'
 
+/** Audio y video pesan distinto: mandan la concurrencia y el plazo del watchdog. */
+function isMediaConverter(converter: Pick<Converter, 'from'>): boolean {
+  return converter.from.some((source) => source.kind === 'audio' || source.kind === 'video')
+}
+
 export function concurrencyForConverter(converter: Pick<Converter, 'from'>): number {
-  return converter.from.some((source) => source.kind === 'audio' || source.kind === 'video') ? 1 : 2
+  return isMediaConverter(converter) ? 1 : 2
+}
+
+/**
+ * Plazo SIN avance tras el cual se aborta ese archivo (006 FR-015,
+ * contracts/reliability.md §Watchdog). Mide ausencia de progreso, no duración total: una
+ * conversión larga que reporta avance no se aborta nunca.
+ *
+ * Audio y video tienen plazo más largo porque ffmpeg-WASM es legítimamente lento y
+ * `mp4-to-mp3` admite archivos de 250 MB.
+ */
+export const WATCHDOG_MS = 300_000
+export const WATCHDOG_MS_MEDIA = 900_000
+
+export function watchdogMsForConverter(converter: Pick<Converter, 'from'>): number {
+  return isMediaConverter(converter) ? WATCHDOG_MS_MEDIA : WATCHDOG_MS
 }
 
 function abortReason(): DOMException {

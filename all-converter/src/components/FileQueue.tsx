@@ -6,11 +6,11 @@
  * nunca por archivo (FR-029/FR-029b).
  */
 import { useEffect, useRef, useState } from 'react'
-import type { ConversionResult, Converter, FileEntry } from '../converters/types'
+import type { ConversionProgress, ConversionResult, Converter, FileEntry } from '../converters/types'
 import { getAvailableConverters, getCommonTargets, getConverterTargets, type CommonChoice } from '../converters/registry'
 import { MAX_BATCH_FILES, MAX_SCAN_FILES } from '../lib/directory-input'
 import { exceedsFileLimit, fileLimitMessage } from '../lib/file-limits'
-import { concurrencyForConverter, runPartitioned } from '../lib/job-scheduler'
+import { concurrencyForConverter, runPartitioned, watchdogMsForConverter } from '../lib/job-scheduler'
 import { saveZip } from '../lib/zip'
 import { Icon, type IconName } from '../ui/components/icons'
 import { LiveRegion, type Announcement } from '../ui/a11y/LiveRegion'
@@ -50,6 +50,48 @@ async function optionsFor(choice: Choice, entry: FileEntry, row: RowOptions): Pr
     }
   }
   return options
+}
+
+/** Texto del vencimiento del watchdog. Es transitorio: reintentar puede funcionar. */
+function watchdogMessage(budgetMs: number): string {
+  return `Se detuvo por inactividad: el conversor no reportó avance en ${Math.round(budgetMs / 60000)} minutos.`
+}
+
+/**
+ * Corre un conversor con watchdog propio (FR-015, contracts/reliability.md).
+ *
+ * Cada archivo tiene su `AbortController`, encadenado al del lote: abortar el lote los aborta
+ * a todos, pero un archivo colgado se puede matar sin tocar a los demás. El plazo se reinicia
+ * con cada evento de progreso, así que mide falta de avance y no duración.
+ */
+async function convertWatched(
+  choice: Choice,
+  file: File,
+  onProgress: (progress: ConversionProgress) => void,
+  options: Record<string, unknown>,
+  batchSignal: AbortSignal,
+): Promise<ConversionResult[]> {
+  const budget = watchdogMsForConverter(choice.converter)
+  const controller = new AbortController()
+  const relayAbort = () => controller.abort()
+  if (batchSignal.aborted) controller.abort()
+  else batchSignal.addEventListener('abort', relayAbort, { once: true })
+
+  let timedOut = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const arm = () => { if (timer) clearTimeout(timer); timer = setTimeout(() => { timedOut = true; controller.abort() }, budget) }
+  arm()
+
+  try {
+    return await choice.converter.convert(file, (progress) => { arm(); onProgress(progress) }, options, controller.signal)
+  } catch (thrown) {
+    // El vencimiento no es una cancelación del usuario: es un error transitorio de ese archivo.
+    if (timedOut) throw new Error(watchdogMessage(budget))
+    throw thrown
+  } finally {
+    if (timer) clearTimeout(timer)
+    batchSignal.removeEventListener('abort', relayAbort)
+  }
 }
 
 // ── Agrupación por carpeta ────────────────────────────────────────────────────
@@ -350,7 +392,7 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
         updateItem(entry.id, { state: 'converting', percent: 0 })
         try {
           const options = await optionsFor(choice, entry, optionsOf(entry))
-          const results = await choice.converter.convert(entry.file, (progress) => updateItem(entry.id, { percent: progress.percent }), options, controller.signal)
+          const results = await convertWatched(choice, entry.file, (progress) => updateItem(entry.id, { percent: progress.percent }), options, controller.signal)
           registerResults(entry, results)
           updateItem(entry.id, { state: 'completed', percent: 100 })
           doneCount += 1
