@@ -250,6 +250,25 @@ describe('watchdog por archivo (FR-015)', () => {
     expect(screen.queryByRole('button', { name: 'Cancelar lote' })).toBeNull()
   })
 
+  it('vuelca el último progreso reportado sin un render por evento (FR-023)', async () => {
+    render(<FileQueue entries={[queueEntry('control-vivo.png')]} />)
+    chooseTarget('control-vivo.png', 'JPG')
+    fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
+    await flush()
+
+    const job = controlledJobs.get('control-vivo.png')!
+    // Ráfaga de eventos como la de ffmpeg: se acumulan y se vuelcan de a un cuadro.
+    act(() => { for (let percent = 5; percent <= 95; percent += 5) job.emitProgress(percent) })
+    await flush(32)
+
+    const bar = screen.getByRole('progressbar', { name: 'Progreso de control-vivo.png' })
+    expect(bar.getAttribute('aria-valuenow')).toBe('95')
+
+    act(() => { job.finish() })
+    await flush()
+    expect(screen.getByText(/control-vivo\.png: completed/)).toBeTruthy()
+  })
+
   it('no aborta al archivo que sigue reportando avance', async () => {
     render(<FileQueue entries={[queueEntry('control-vivo.png')]} />)
     chooseTarget('control-vivo.png', 'JPG')

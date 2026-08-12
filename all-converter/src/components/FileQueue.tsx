@@ -232,6 +232,37 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
   const updateItem = (id: string, patch: Partial<BatchItem>) => setItems((current) => ({ ...current, [id]: { ...current[id], ...patch } as BatchItem }))
 
   /**
+   * Progreso throttleado a un cuadro (FR-023): ffmpeg puede emitir decenas de eventos por
+   * segundo y por archivo. Se acumula el último porcentaje de cada uno en un ref y se vuelca
+   * en un solo `setItems` por frame, en vez de uno por evento.
+   */
+  const progressRef = useRef<Record<string, number>>({})
+  const frameRef = useRef<number | null>(null)
+
+  const flushProgress = useCallback(() => {
+    frameRef.current = null
+    const pending = progressRef.current
+    progressRef.current = {}
+    const ids = Object.keys(pending)
+    if (!ids.length) return
+    setItems((current) => {
+      const next = { ...current }
+      // Sólo pisa el porcentaje de lo que sigue convirtiendo: un evento tardío no puede
+      // revivir una fila ya terminada.
+      for (const id of ids) if (next[id]?.state === 'converting') next[id] = { ...next[id], percent: pending[id] }
+      return next
+    })
+  }, [])
+
+  const reportProgress = useCallback((id: string, percent?: number) => {
+    if (percent === undefined) return
+    progressRef.current[id] = percent
+    if (frameRef.current === null) frameRef.current = requestAnimationFrame(flushProgress)
+  }, [flushProgress])
+
+  useEffect(() => () => { if (frameRef.current !== null) cancelAnimationFrame(frameRef.current) }, [])
+
+  /**
    * Marca la fila como fallida clasificando la causa: de ahí sale si se ofrece "Reintentar"
    * (FR-013). Ofrecerlo en un fallo determinístico sería prometer algo que no va a pasar.
    */
@@ -358,7 +389,7 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
     updateItem(entry.id, { state: 'converting', percent: 0 })
     try {
       const options = await optionsFor(choice, entry, optionsOf(entry))
-      const results = await convertWatched(choice, entry.file, (progress) => updateItem(entry.id, { percent: progress.percent }), options, signal)
+      const results = await convertWatched(choice, entry.file, (progress) => reportProgress(entry.id, progress.percent), options, signal)
       registerResults(entry, results)
       updateItem(entry.id, { state: 'completed', percent: 100, error: undefined, errorClass: undefined })
       return 'done'
@@ -456,7 +487,7 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
       grouped.forEach((entry) => updateItem(entry.id, { state: 'converting', percent: 0 }))
       try {
         const options = await optionsFor(choice, grouped[0], optionsOf(grouped[0]))
-        const results = await choice.converter.convertMany!(grouped.map((entry) => entry.file), (progress) => grouped.forEach((entry) => updateItem(entry.id, { percent: progress.percent })), options, controller.signal)
+        const results = await choice.converter.convertMany!(grouped.map((entry) => entry.file), (progress) => grouped.forEach((entry) => reportProgress(entry.id, progress.percent)), options, controller.signal)
         registerResults(grouped[0], results)
         grouped.forEach((entry) => updateItem(entry.id, { state: 'completed', percent: 100, error: undefined, errorClass: undefined }))
         doneCount += grouped.length
