@@ -23,16 +23,16 @@ puerta de merge (2) exige test con fixture real. No son opcionales en este proye
 
 ---
 
-> **Estado de avance**: ver [ESTADO.md](./ESTADO.md). Parte de la Fase 2 y de la Fase 3 ya está
-> escrita y tipada, pero **la suite de tests todavía no se ejecutó ni una vez**. Al retomar,
-> correr `npx vitest run` antes que nada.
+> **Estado de avance**: ver [ESTADO.md](./ESTADO.md). Todas las fases están implementadas y
+> verificadas: `npm run ci` en verde (576 tests unitarios + 19 e2e). Lo único pendiente es la
+> pasada manual de T045.
 
 ## Phase 1: Setup
 
 **Purpose**: fixtures y andamiaje que necesitan las demás fases
 
-- [ ] T001 [P] Agregar fixture de carpeta con ≥60 imágenes reales pequeñas en `tests/fixtures/lote-grande/` y un helper que la cargue en `tests/helpers/batch.ts`
-- [ ] T002 [P] Agregar al helper `tests/helpers/batch.ts` un conversor doble que se cuelga sin reportar progreso (para el watchdog) y otro que falla con causa determinística
+- [x] T001 [P] Carpeta de ≥60 imágenes reales para el lote grande — se genera en un temporal desde `tests/fixtures/sample.png` con `tests/helpers/large-folder.ts` en vez de versionar 60 binarios idénticos
+- [x] T002 [P] Agregar al helper `tests/helpers/batch.ts` un conversor doble que se cuelga sin reportar progreso (para el watchdog) y otro que falla con causa determinística
 
 ---
 
@@ -42,12 +42,12 @@ puerta de merge (2) exige test con fixture real. No son opcionales en este proye
 
 **⚠️ CRÍTICO**: ninguna historia puede empezar hasta que esta fase esté completa.
 
-- [ ] T003 Migrar `resultsRef` a `Blob` en `src/components/FileQueue.tsx`: cambiar el tipo a `{ name: string; blob: Blob; relativePath?: string }` y hacer que `registerResults` envuelva el `ArrayBuffer` del worker en `Blob` y suelte la referencia en el acto (data-model.md §Resultado retenido)
-- [ ] T004 Cambiar `ZipEntry` a `{ name; blob: Blob; relativePath? }` en `src/lib/zip.ts` y propagar el tipo a `WorkerInput` en `src/workers/types.ts` sin romper los conversores existentes
-- [ ] T005 Corregir el defecto de UI trabada en `src/components/FileQueue.tsx`: envolver la llamada de empaquetado en `try/catch` y mover `setRunning(false)` a un `finally`; saltear el empaquetado si el lote fue cancelado (FR-009, contracts/zip-stream.md §Errores)
-- [ ] T006 [P] Escribir el test que reproduce ese defecto en `tests/components/batch-flow.test.tsx`: cancelar el lote habiendo resultados previos NO debe dejar `running` en true ni el botón de convertir deshabilitado
-- [ ] T007 [P] Reemplazar el filtro O(n²) de resultados empaquetados por un `Set` de ids en `src/components/FileQueue.tsx` (hoy `Object.entries(...).filter(([id]) => entries.some(...))`)
-- [ ] T008 [P] Mover `src/ui/components/error-class.ts` a `src/lib/error-class.ts` y dejar en la ruta vieja un reexport, para que `tests/ui/components/error-class.test.ts` y los consumidores actuales sigan verdes (research.md D8)
+- [x] T003 Migrar `resultsRef` a `Blob` en `src/components/FileQueue.tsx`: cambiar el tipo a `{ name: string; blob: Blob; relativePath?: string }` y hacer que `registerResults` envuelva el `ArrayBuffer` del worker en `Blob` y suelte la referencia en el acto (data-model.md §Resultado retenido)
+- [x] T004 Cambiar `ZipEntry` a `{ name; blob: Blob; relativePath? }` en `src/lib/zip.ts` y propagar el tipo a `WorkerInput` en `src/workers/types.ts` sin romper los conversores existentes
+- [x] T005 Corregir el defecto de UI trabada en `src/components/FileQueue.tsx`: envolver la llamada de empaquetado en `try/catch` y mover `setRunning(false)` a un `finally`; saltear el empaquetado si el lote fue cancelado (FR-009, contracts/zip-stream.md §Errores)
+- [x] T006 [P] Escribir el test que reproduce ese defecto en `tests/components/batch-flow.test.tsx`: cancelar el lote habiendo resultados previos NO debe dejar `running` en true ni el botón de convertir deshabilitado
+- [x] T007 [P] Reemplazar el filtro O(n²) de resultados empaquetados por un `Set` de ids en `src/components/FileQueue.tsx` (hoy `Object.entries(...).filter(([id]) => entries.some(...))`)
+- [x] T008 [P] Mover `src/ui/components/error-class.ts` a `src/lib/error-class.ts` y dejar en la ruta vieja un reexport, para que `tests/ui/components/error-class.test.ts` y los consumidores actuales sigan verdes (research.md D8)
 
 **Checkpoint**: los resultados ya no duplican bytes en el heap y el empaquetado no puede trabar la UI.
 
@@ -64,26 +64,26 @@ verificar que tiene todas las entradas con los bytes correctos.
 
 > Escribir estos tests ANTES de la implementación y verificar que fallan.
 
-- [ ] T009 [P] [US1] Test de cupo en `tests/lib/directory-input.test.ts`: 200 aceptados, el 201 rechazado, el cupo cuenta entradas preexistentes, y actualizar las aserciones que hoy tienen el literal `'Límite de 10'`
-- [ ] T010 [P] [US1] Test en `tests/lib/directory-input.test.ts` que espía el módulo de detección y verifica que **`detectFileType` no se invoca para los excedentes de cupo** (FR-002), y que vacío y tipo-no-soportado siguen rechazándose por su causa sin consumir cuota
-- [ ] T011 [P] [US1] Test del techo de exploración en `tests/lib/directory-input.test.ts`: `readDroppedItems` corta en `MAX_SCAN_FILES` e informa cuántos ignoró (FR-003)
-- [ ] T012 [P] [US1] Test de round-trip del ZIP en `tests/lib/zip.test.ts`: escribir ≥200 entradas con el escritor nuevo y releerlas con `JSZip.loadAsync`; verificar fidelidad de bytes, rutas relativas, colisiones (`informe-2.pdf`), subcarpetas y nombres con acentos (contracts/zip-stream.md §Invariantes)
-- [ ] T013 [P] [US1] Test en `tests/lib/zip.test.ts` de que el empaquetado lee de a un blob por vez (instrumentar `arrayBuffer()` y verificar que no hay más de una lectura viva simultánea) y de que se rechaza con aviso si la suma supera 4 GB
+- [x] T009 [P] [US1] Test de cupo en `tests/lib/directory-input.test.ts`: 200 aceptados, el 201 rechazado, el cupo cuenta entradas preexistentes, y actualizar las aserciones que hoy tienen el literal `'Límite de 10'`
+- [x] T010 [P] [US1] Test en `tests/lib/directory-input.test.ts` que espía el módulo de detección y verifica que **`detectFileType` no se invoca para los excedentes de cupo** (FR-002), y que vacío y tipo-no-soportado siguen rechazándose por su causa sin consumir cuota
+- [x] T011 [P] [US1] Test del techo de exploración en `tests/lib/directory-input.test.ts`: `readDroppedItems` corta en `MAX_SCAN_FILES` e informa cuántos ignoró (FR-003)
+- [x] T012 [P] [US1] Test de round-trip del ZIP en `tests/lib/zip.test.ts`: escribir ≥200 entradas con el escritor nuevo y releerlas con `JSZip.loadAsync`; verificar fidelidad de bytes, rutas relativas, colisiones (`informe-2.pdf`), subcarpetas y nombres con acentos (contracts/zip-stream.md §Invariantes)
+- [x] T013 [P] [US1] Test en `tests/lib/zip.test.ts` de que el empaquetado lee de a un blob por vez (instrumentar `arrayBuffer()` y verificar que no hay más de una lectura viva simultánea) y de que se rechaza con aviso si la suma supera 4 GB
 
 ### Implementation for User Story 1
 
-- [ ] T014 [US1] Implementar el escritor ZIP STORE incremental en `src/workers/zip-operations.ts`: cabecera local + bytes + directorio central + EOCD, flag UTF-8 `0x800`, tabla CRC32 propia; leer un `Blob` por vez con `blob.arrayBuffer()` y emitir chunks (contracts/zip-stream.md)
-- [ ] T015 [US1] Agregar la respuesta `{ kind: 'chunk'; jobId; chunk: Uint8Array }` en `src/workers/types.ts` y el callback opcional `onChunk` en `src/workers/client.ts`, sin que una respuesta `chunk` resuelva el trabajo y posteando el buffer como transferable
-- [ ] T016 [US1] Emitir los chunks desde `src/workers/zip.worker.ts` conservando el orden
-- [ ] T017 [US1] Implementar el sink de descarga en `src/lib/zip.ts`: escribir a `showSaveFilePicker()` si existe, y si no acumular chunks y cerrar en un único `new Blob(chunks)` (contracts/zip-stream.md §Destino)
-- [ ] T018 [US1] Evitar rearmar el ZIP cuando no se agregaron resultados nuevos desde el último empaquetado, en `src/components/FileQueue.tsx` (FR-010)
-- [ ] T019 [US1] Subir `MAX_BATCH_FILES` a 200 y agregar `MAX_SCAN_FILES = 5000` en `src/lib/directory-input.ts`
-- [ ] T020 [US1] Reordenar `intakeFiles` en `src/lib/directory-input.ts` para evaluar el cupo ANTES de llamar a `detectFileType`, preservando que vacío y tipo-no-soportado se evalúen primero y no consuman cuota (research.md D7)
-- [ ] T021 [US1] Detectar el tipo de los archivos que sí entran con `runWithConcurrency` en `src/lib/directory-input.ts`, conservando el orden determinista de las entradas
-- [ ] T022 [US1] Cortar el recorrido recursivo en `readDroppedItems` al llegar a `MAX_SCAN_FILES` y devolver cuántos quedaron sin explorar, en `src/lib/directory-input.ts`
-- [ ] T023 [US1] Serializar los aportes de archivos en `src/App.tsx` para que dos arrastres casi simultáneos no puedan pasarse del cupo (FR-005)
-- [ ] T024 [US1] Colapsar los rechazos por cupo en una sola fila resumen en `src/components/FileQueue.tsx`, con cantidad y motivo, manteniendo fila propia para vacío y tipo-no-soportado (FR-004, data-model.md §RechazoAgregado)
-- [ ] T025 [US1] Particionar la concurrencia en dos grupos (audio/video a 1, resto a 2) en `src/lib/job-scheduler.ts` y `src/components/FileQueue.tsx`, eliminando el `reduce`/`Math.min` global (FR-017, contracts/job-scheduler.md §Particionado)
+- [x] T014 [US1] Implementar el escritor ZIP STORE incremental en `src/workers/zip-operations.ts`: cabecera local + bytes + directorio central + EOCD, flag UTF-8 `0x800`, tabla CRC32 propia; leer un `Blob` por vez con `blob.arrayBuffer()` y emitir chunks (contracts/zip-stream.md)
+- [x] T015 [US1] Agregar la respuesta `{ kind: 'chunk'; jobId; chunk: Uint8Array }` en `src/workers/types.ts` y el callback opcional `onChunk` en `src/workers/client.ts`, sin que una respuesta `chunk` resuelva el trabajo y posteando el buffer como transferable
+- [x] T016 [US1] Emitir los chunks desde `src/workers/zip.worker.ts` conservando el orden
+- [x] T017 [US1] Implementar el sink de descarga en `src/lib/zip.ts`: escribir a `showSaveFilePicker()` si existe, y si no acumular chunks y cerrar en un único `new Blob(chunks)` (contracts/zip-stream.md §Destino)
+- [x] T018 [US1] Evitar rearmar el ZIP cuando no se agregaron resultados nuevos desde el último empaquetado, en `src/components/FileQueue.tsx` (FR-010)
+- [x] T019 [US1] Subir `MAX_BATCH_FILES` a 200 y agregar `MAX_SCAN_FILES = 5000` en `src/lib/directory-input.ts`
+- [x] T020 [US1] Reordenar `intakeFiles` en `src/lib/directory-input.ts` para evaluar el cupo ANTES de llamar a `detectFileType`, preservando que vacío y tipo-no-soportado se evalúen primero y no consuman cuota (research.md D7)
+- [x] T021 [US1] Detectar el tipo de los archivos que sí entran con `runWithConcurrency` en `src/lib/directory-input.ts`, conservando el orden determinista de las entradas
+- [x] T022 [US1] Cortar el recorrido recursivo en `readDroppedItems` al llegar a `MAX_SCAN_FILES` y devolver cuántos quedaron sin explorar, en `src/lib/directory-input.ts`
+- [x] T023 [US1] Serializar los aportes de archivos en `src/App.tsx` para que dos arrastres casi simultáneos no puedan pasarse del cupo (FR-005)
+- [x] T024 [US1] Colapsar los rechazos por cupo en una sola fila resumen en `src/components/FileQueue.tsx`, con cantidad y motivo, manteniendo fila propia para vacío y tipo-no-soportado (FR-004, data-model.md §RechazoAgregado)
+- [x] T025 [US1] Particionar la concurrencia en dos grupos (audio/video a 1, resto a 2) en `src/lib/job-scheduler.ts` y `src/components/FileQueue.tsx`, eliminando el `reduce`/`Math.min` global (FR-017, contracts/job-scheduler.md §Particionado)
 
 **Checkpoint**: una carpeta de 200 archivos se convierte y se descarga completa.
 
@@ -98,17 +98,17 @@ causa y el reintento aparece sólo en los transitorios.
 
 ### Tests for User Story 2
 
-- [ ] T026 [P] [US2] Test de watchdog en `tests/components/batch-flow.test.tsx`: un conversor que no reporta progreso se aborta al vencer el plazo, queda en `error` de clase transitoria y el lote continúa con los demás (FR-015)
-- [ ] T027 [P] [US2] Test en `tests/components/batch-flow.test.tsx` de que el reintento aparece en el 100% de los fallos transitorios y en el 0% de los determinísticos (FR-013, SC-005)
-- [ ] T028 [P] [US2] Test en `tests/components/batch-flow.test.tsx` de que reintentar reprocesa **sólo** ese archivo y no toca los resultados de los demás (FR-014)
-- [ ] T029 [P] [US2] Test en `tests/components/batch-flow.test.tsx` del resumen final: listos / con error / cancelados (FR-016)
+- [x] T026 [P] [US2] Test de watchdog en `tests/components/batch-flow.test.tsx`: un conversor que no reporta progreso se aborta al vencer el plazo, queda en `error` de clase transitoria y el lote continúa con los demás (FR-015)
+- [x] T027 [P] [US2] Test en `tests/components/batch-flow.test.tsx` de que el reintento aparece en el 100% de los fallos transitorios y en el 0% de los determinísticos (FR-013, SC-005)
+- [x] T028 [P] [US2] Test en `tests/components/batch-flow.test.tsx` de que reintentar reprocesa **sólo** ese archivo y no toca los resultados de los demás (FR-014)
+- [x] T029 [P] [US2] Test en `tests/components/batch-flow.test.tsx` del resumen final: listos / con error / cancelados (FR-016)
 
 ### Implementation for User Story 2
 
-- [ ] T030 [US2] Implementar el watchdog por archivo en `src/components/FileQueue.tsx`: un `AbortController` por archivo encadenado al del lote, con temporizador que se reinicia con cada evento de progreso; 300 s por defecto y 900 s para audio/video (contracts/reliability.md §Watchdog)
-- [ ] T031 [US2] Consumir `classifyError`/`makeRowError` desde `src/lib/error-class.ts` en `src/components/FileQueue.tsx` y guardar `errorClass` en `BatchItem` (data-model.md §BatchItem)
-- [ ] T032 [US2] Agregar la acción "Reintentar" en las filas con error transitorio en `src/components/FileQueue.tsx`, que vuelve a leer el `File` original y reencola sólo esa fila
-- [ ] T033 [US2] Extender el resumen consolidado del lote con la cuenta de cancelados en `src/components/FileQueue.tsx` y en `src/ui/a11y/LiveRegion.tsx`, manteniendo un solo sonido por lote
+- [x] T030 [US2] Implementar el watchdog por archivo en `src/components/FileQueue.tsx`: un `AbortController` por archivo encadenado al del lote, con temporizador que se reinicia con cada evento de progreso; 300 s por defecto y 900 s para audio/video (contracts/reliability.md §Watchdog)
+- [x] T031 [US2] Consumir `classifyError`/`makeRowError` desde `src/lib/error-class.ts` en `src/components/FileQueue.tsx` y guardar `errorClass` en `BatchItem` (data-model.md §BatchItem)
+- [x] T032 [US2] Agregar la acción "Reintentar" en las filas con error transitorio en `src/components/FileQueue.tsx`, que vuelve a leer el `File` original y reencola sólo esa fila
+- [x] T033 [US2] Extender el resumen consolidado del lote con la cuenta de cancelados en `src/components/FileQueue.tsx` y en `src/ui/a11y/LiveRegion.tsx`, manteniendo un solo sonido por lote
 
 **Checkpoint**: un lote con archivos rotos entrega todo lo demás y explica cada fallo.
 
@@ -123,15 +123,15 @@ reanudar y comprobar que termina completo.
 
 ### Tests for User Story 3
 
-- [ ] T034 [P] [US3] Tests de `PauseGate` en `tests/lib/job-scheduler.test.ts`: pausar no arranca trabajos nuevos y los en vuelo terminan; reanudar sigue en orden; cancelar estando pausado funciona sin reanudar; `pause()`/`resume()` idempotentes; sin gate el comportamiento es idéntico al actual (contracts/job-scheduler.md)
-- [ ] T035 [P] [US3] Verificar que los 6 tests existentes de `tests/lib/job-scheduler.test.ts` siguen pasando sin modificarse
+- [x] T034 [P] [US3] Tests de `PauseGate` en `tests/lib/job-scheduler.test.ts`: pausar no arranca trabajos nuevos y los en vuelo terminan; reanudar sigue en orden; cancelar estando pausado funciona sin reanudar; `pause()`/`resume()` idempotentes; sin gate el comportamiento es idéntico al actual (contracts/job-scheduler.md)
+- [x] T035 [P] [US3] Verificar que los 6 tests existentes de `tests/lib/job-scheduler.test.ts` siguen pasando sin modificarse
 
 ### Implementation for User Story 3
 
-- [ ] T036 [US3] Implementar `PauseGate` y su parámetro opcional en `runWithConcurrency`, en `src/lib/job-scheduler.ts`, consultado antes de tomar cada índice del cursor
-- [ ] T037 [US3] Cablear pausa/reanudación en `src/components/FileQueue.tsx` y agregar el estado `'paused'` a `BatchItem`
-- [ ] T038 [US3] Agregar los controles Pausar/Reanudar junto a "Cancelar lote" en `src/components/FileQueue.tsx`, operables por teclado, con `aria-label` que refleje el estado
-- [ ] T039 [US3] Agregar el ícono de pausa en `src/ui/components/icons.tsx` y el estilo del estado `paused` en `src/index.css`, con diferenciador no cromático (ícono + texto) y contraste AA (FR-021, Principio XII)
+- [x] T036 [US3] Implementar `PauseGate` y su parámetro opcional en `runWithConcurrency`, en `src/lib/job-scheduler.ts`, consultado antes de tomar cada índice del cursor
+- [x] T037 [US3] Cablear pausa/reanudación en `src/components/FileQueue.tsx` y agregar el estado `'paused'` a `BatchItem`
+- [x] T038 [US3] Agregar los controles Pausar/Reanudar junto a "Cancelar lote" en `src/components/FileQueue.tsx`, operables por teclado, con `aria-label` que refleje el estado
+- [x] T039 [US3] Agregar el ícono de pausa en `src/ui/components/icons.tsx` y el estilo del estado `paused` en `src/index.css`, con diferenciador no cromático (ícono + texto) y contraste AA (FR-021, Principio XII)
 
 **Checkpoint**: las tres historias funcionan de forma independiente.
 
@@ -139,13 +139,13 @@ reanudar y comprobar que termina completo.
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T040 [P] Extraer la fila de la cola a un componente memoizado y mover `choicesFor` a un `useMemo` por entrada, en `src/components/FileQueue.tsx` (FR-022)
-- [ ] T041 [P] Throttlear las actualizaciones de progreso acumulando en un ref y volcando con `requestAnimationFrame`, en `src/components/FileQueue.tsx` (FR-023)
-- [ ] T042 [P] Test e2e en `tests/e2e/batch-large.spec.ts`: soltar una carpeta de 60 archivos, convertir, pausar a mitad, reanudar, descargar el ZIP y verificar la cantidad de entradas
-- [ ] T043 [P] Actualizar `README.md` y `src/ui/README.md` con el tope nuevo de 200, la pausa/reanudación y el reintento
-- [ ] T044 Verificar el presupuesto de bundle con `npm run test:budget` y confirmar que quitar `JSZip` del camino de escritura no aumentó el chunk inicial
-- [ ] T045 Correr la validación completa de `quickstart.md`, incluida la medición de memoria con 200 archivos en DevTools (SC-009)
-- [ ] T046 Correr `npm run ci` completo y dejarlo en verde
+- [x] T040 [P] Extraer la fila de la cola a un componente memoizado y mover `choicesFor` a un `useMemo` por entrada, en `src/components/FileQueue.tsx` (FR-022)
+- [x] T041 [P] Throttlear las actualizaciones de progreso acumulando en un ref y volcando con `requestAnimationFrame`, en `src/components/FileQueue.tsx` (FR-023)
+- [x] T042 [P] Test e2e en `tests/e2e/batch-large.spec.ts`: soltar una carpeta de 60 archivos, convertir, pausar a mitad, reanudar, descargar el ZIP y verificar la cantidad de entradas
+- [x] T043 [P] Actualizar `README.md` y `src/ui/README.md` con el tope nuevo de 200, la pausa/reanudación y el reintento
+- [x] T044 Verificar el presupuesto de bundle con `npm run test:budget` y confirmar que quitar `JSZip` del camino de escritura no aumentó el chunk inicial
+- [~] T045 Correr la validación completa de `quickstart.md`, incluida la medición de memoria con 200 archivos en DevTools (SC-009) — **automático hecho** (heap medido por CDP: 20 MB con 200 archivos convertidos y empaquetados); **falta la pasada manual** de a11y en escala de grises y recorrido por teclado
+- [x] T046 Correr `npm run ci` completo y dejarlo en verde
 
 ---
 
