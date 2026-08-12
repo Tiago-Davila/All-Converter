@@ -66,7 +66,7 @@ no hay backend, no hay base de datos, no hay telemetría, no hay llamadas a APIs
 | `xlsx` (SheetJS) | Planillas XLSX/CSV/JSON |
 | `jsPDF` + `jspdf-autotable` | Generación de PDFs con tablas |
 | `file-type` | Detección de tipo por magic bytes |
-| `JSZip` | Empaquetado ZIP |
+| `JSZip` | Lectura de contenedores ODT/DOCX (el ZIP de salida lo escribe un generador propio) |
 | `browser-image-compression` | Compresión de imágenes |
 | `vite-plugin-pwa` + Workbox | PWA / Service Worker / offline |
 | Vitest + Playwright | Tests unitarios y E2E |
@@ -90,7 +90,19 @@ UI (registry) → Converter → Web Worker → resultado → UI
 - El tipo de archivo se detecta por **magic bytes** (`file-type`). La extensión solo se usa como fallback.
 
 ### Concurrencia
-El scheduler (`src/lib/job-scheduler.ts`) limita la concurrencia a 2 conversiones simultáneas en general, y a 1 para conversiones de audio/vídeo.
+El scheduler (`src/lib/job-scheduler.ts`) parte el lote en dos grupos con su propio tope: audio/vídeo de a 1 y todo lo demás de a 2, avanzando en paralelo. Un solo MP3 entre 199 imágenes no baja el lote entero a 1.
+
+### Lotes grandes
+| Qué | Cómo |
+|---|---|
+| Tope de la cola | **200 archivos**. Los que no entran se resumen en una sola fila, no en 200 filas rojas. |
+| Exploración de carpetas | Corta a los 5000 archivos e informa cuántos quedó sin mirar. El cupo se evalúa **antes** de leer magic bytes: soltar una carpeta enorme no cuesta miles de lecturas. |
+| Memoria | Cada resultado se retiene como `Blob` (el navegador lo respalda en disco), nunca como `ArrayBuffer` en el heap. El ZIP se escribe con un generador STORE incremental propio que lee **un blob por vez**, así que el pico es el archivo más grande y no la suma del lote. Sin ZIP64: por encima de 4 GB se avisa en vez de emitir un archivo corrupto. |
+| Empaquetado | El ZIP se arma al hacer clic en "Descargar ZIP", no al terminar el lote: `showSaveFilePicker` exige el gesto del usuario, y así no se empaqueta lo que nadie va a descargar. Sin File System Access se cae a una descarga común. |
+| Pausar / reanudar | Pausar no interrumpe lo que ya está convirtiendo: frena el despacho. Reanudar sigue en orden. Cancelar estando pausado funciona sin reanudar. |
+| Watchdog | Cada archivo tiene su propio `AbortController`: si deja de reportar avance por 5 minutos (15 para audio/vídeo) se aborta **solo ese archivo** y el lote sigue. |
+| Reintento | Se ofrece únicamente en fallos transitorios (memoria, motor, watchdog), nunca en determinísticos (corrupto, protegido, formato no soportado). Reintentar reprocesa solo ese archivo. |
+| Resumen | Al terminar, el lote informa listos / con error / cancelados, con un único sonido y un único anuncio para lectores de pantalla. |
 
 ### ffmpeg y `SharedArrayBuffer`
 `@ffmpeg/core-mt` (modo multi-thread) requiere `crossOriginIsolated = true`, que a su vez requiere los headers `COOP: same-origin` y `COEP: require-corp`. Si el contexto no es aislado, la app degrada automáticamente a `@ffmpeg/core` (single-thread). Los headers están definidos en `vercel.json` y en la configuración de Vite para desarrollo y preview.
@@ -134,7 +146,8 @@ all-converter/
 │   └── e2e/           # tests Playwright en navegador real
 ├── specs/
 │   ├── 001-convertitodo/   # spec, plan, data-model, tasks (fuente de verdad)
-│   └── 002-capa-experiencia/ # spec de la capa de experiencia (en progreso)
+│   ├── 002-capa-experiencia/ # spec de la capa de experiencia
+│   └── 006-lotes-grandes/  # spec de lotes de hasta 200 archivos
 ├── scripts/           # presupuesto de bundle, stubs de workers, verificación offline
 ├── public/fonts/      # fuentes self-hosted (no CDN)
 └── vercel.json        # headers COOP/COEP — no quitar

@@ -21,4 +21,15 @@ Esto mantiene el registry como única fuente de verdad de la matriz de conversio
 | `a11y/` | Tokens de color, contraste, matriz de capacidades/degradación, `aria-live` |
 | `components/` | Cola de archivos, estados, selector de destino, tiles de borde |
 
+## Estados de fila
+
+`pendiente`, `pausado`, `convirtiendo`, `listo`, `error` y `cancelado`. Ninguno se distingue
+sólo por color: cada uno lleva forma (punto o ícono) y texto. `pausado` usa el ícono de pausa
+y la palabra "Pausado"; los controles del lote alternan entre "Pausar lote" y "Reanudar lote"
+también en su `aria-label`, no sólo en el ícono.
+
+La fila vive en `src/components/QueueRow.tsx` y está memoizada: con 200 archivos en la cola,
+un evento de progreso no puede volver a dibujar las 200 filas. El progreso se acumula y se
+vuelca de a un cuadro con `requestAnimationFrame`.
+
 Cada módulo espeja su ubicación en `tests/ui/`.
