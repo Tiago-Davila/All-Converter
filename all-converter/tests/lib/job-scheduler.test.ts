@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { concurrencyForConverter, runPartitioned, runWithConcurrency } from '../../src/lib/job-scheduler'
+import { concurrencyForConverter, createPauseGate, runPartitioned, runWithConcurrency } from '../../src/lib/job-scheduler'
 import { AUDIO_SOURCE, IMAGE_SOURCE } from '../../src/converters/sources'
 
 describe('scheduler', () => {
@@ -112,5 +112,117 @@ describe('scheduler particionado (FR-017)', () => {
 
   it('sin trabajos devuelve una lista vacía', async () => {
     await expect(runPartitioned([])).resolves.toEqual([])
+  })
+})
+
+describe('PauseGate (FR-018, FR-019, FR-020)', () => {
+  /** Trabajo que registra su arranque y termina cuando el test lo suelta. */
+  function makeJobs(count: number) {
+    const started: number[] = []
+    const releases: (() => void)[] = []
+    const jobs = Array.from({ length: count }, (_, index) => async () => {
+      started.push(index)
+      await new Promise<void>((resolve) => { releases[index] = resolve })
+      return index
+    })
+    return { started, releases, jobs }
+  }
+
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+  it('pausar no arranca trabajos nuevos y los en vuelo terminan', async () => {
+    const gate = createPauseGate()
+    const { started, releases, jobs } = makeJobs(4)
+    const run = runWithConcurrency(jobs, 1, undefined, gate)
+    await tick()
+    expect(started).toEqual([0])
+
+    gate.pause()
+    releases[0]()          // el trabajo en vuelo termina igual
+    await tick()
+    await tick()
+    expect(started).toEqual([0])
+    expect(gate.paused).toBe(true)
+
+    gate.resume()
+    await tick()
+    expect(started).toEqual([0, 1])
+
+    releases[1](); await tick()
+    releases[2](); await tick()
+    releases[3]()
+    await expect(run).resolves.toHaveLength(4)
+  })
+
+  it('reanudar continúa en orden, sin saltear ni repetir', async () => {
+    const gate = createPauseGate()
+    const order: number[] = []
+    const jobs = Array.from({ length: 5 }, (_, index) => async () => { order.push(index); return index })
+    gate.pause()
+    const run = runWithConcurrency(jobs, 2, undefined, gate)
+    await tick()
+    expect(order).toEqual([])
+
+    gate.resume()
+    const results = await run
+    expect(order).toEqual([0, 1, 2, 3, 4])
+    expect(results.map((result) => (result.status === 'fulfilled' ? result.value : null))).toEqual([0, 1, 2, 3, 4])
+  })
+
+  it('cancelar estando pausado no requiere reanudar', async () => {
+    const gate = createPauseGate()
+    const controller = new AbortController()
+    const { started, releases, jobs } = makeJobs(3)
+    const run = runWithConcurrency(jobs, 1, controller.signal, gate)
+    await tick()
+
+    gate.pause()
+    releases[0]()
+    await tick()
+
+    controller.abort()
+    const results = await run          // no cuelga esperando un resume que no llega
+    expect(started).toEqual([0])
+    expect(results.slice(1).every((result) => result.status === 'rejected' && (result.reason as DOMException).name === 'AbortError')).toBe(true)
+    expect(gate.paused).toBe(true)
+  })
+
+  it('pause y resume son idempotentes y resume sin pause no hace nada', async () => {
+    const gate = createPauseGate()
+    gate.resume()
+    expect(gate.paused).toBe(false)
+    gate.pause(); gate.pause()
+    expect(gate.paused).toBe(true)
+    gate.resume(); gate.resume()
+    expect(gate.paused).toBe(false)
+    await expect(runWithConcurrency([async () => 'ok'], 1, undefined, gate)).resolves.toEqual([{ status: 'fulfilled', value: 'ok' }])
+  })
+
+  it('pausar después de que terminó todo no cuelga a nadie', async () => {
+    const gate = createPauseGate()
+    await runWithConcurrency([async () => 1, async () => 2], 2, undefined, gate)
+    gate.pause()
+    await expect(runWithConcurrency([async () => 3], 1)).resolves.toEqual([{ status: 'fulfilled', value: 3 }])
+  })
+
+  it('sin gate el comportamiento es el de siempre', async () => {
+    const results = await runWithConcurrency([async () => 'a', async () => 'b'], 2)
+    expect(results).toEqual([{ status: 'fulfilled', value: 'a' }, { status: 'fulfilled', value: 'b' }])
+  })
+
+  it('el lote particionado también respeta la pausa', async () => {
+    const gate = createPauseGate()
+    const order: string[] = []
+    gate.pause()
+    const run = runPartitioned([
+      { run: async () => { order.push('audio'); return 'audio' }, limit: 1 },
+      { run: async () => { order.push('imagen'); return 'imagen' }, limit: 2 },
+    ], undefined, gate)
+    await tick()
+    expect(order).toEqual([])
+
+    gate.resume()
+    await run
+    expect(order).toHaveLength(2)
   })
 })

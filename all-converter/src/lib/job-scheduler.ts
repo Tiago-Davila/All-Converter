@@ -28,6 +28,52 @@ function abortReason(): DOMException {
   return new DOMException('Cancelado', 'AbortError')
 }
 
+/**
+ * Compuerta de pausa del lote (006 FR-018/FR-019, contracts/job-scheduler.md).
+ *
+ * Pausar NO interrumpe lo que ya está en vuelo: sólo frena el despacho de trabajos nuevos.
+ * Reanudar continúa donde iba, sin reiniciar el cursor ni saltear nada.
+ */
+export interface PauseGate {
+  readonly paused: boolean
+  /** Resuelve al reanudar; inmediato si no está pausada. */
+  wait(): Promise<void>
+  pause(): void
+  resume(): void
+}
+
+export function createPauseGate(): PauseGate {
+  let paused = false
+  let waiters: (() => void)[] = []
+  return {
+    get paused() { return paused },
+    wait: () => (paused ? new Promise<void>((resolve) => { waiters.push(resolve) }) : Promise.resolve()),
+    pause: () => { paused = true },
+    resume: () => {
+      paused = false
+      const pending = waiters
+      waiters = []
+      for (const resolve of pending) resolve()
+    },
+  }
+}
+
+/**
+ * Espera a que se reanude, pero cancelar mientras está pausado también despierta al runner:
+ * pausa y cancelación son ortogonales (FR-020). Sin esto, cancelar un lote pausado colgaría
+ * la promesa del lote hasta un `resume` que quizá nunca llegue.
+ */
+async function waitWhilePaused(gate: PauseGate, signal?: AbortSignal): Promise<void> {
+  while (gate.paused && !signal?.aborted) {
+    if (!signal) { await gate.wait(); continue }
+    await new Promise<void>((resolve) => {
+      const onAbort = () => resolve()
+      signal.addEventListener('abort', onAbort, { once: true })
+      void gate.wait().then(() => { signal.removeEventListener('abort', onAbort); resolve() })
+    })
+  }
+}
+
 /** Un trabajo con el tope de concurrencia del grupo al que pertenece. */
 export interface PartitionedJob<T> { run: () => Promise<T>; limit: number }
 
@@ -44,6 +90,7 @@ export interface PartitionedJob<T> { run: () => Promise<T>; limit: number }
 export async function runPartitioned<T>(
   jobs: readonly PartitionedJob<T>[],
   signal?: AbortSignal,
+  gate?: PauseGate,
 ): Promise<PromiseSettledResult<T>[]> {
   const groups = new Map<number, number[]>()
   jobs.forEach((job, index) => {
@@ -54,7 +101,7 @@ export async function runPartitioned<T>(
 
   const results = new Array<PromiseSettledResult<T>>(jobs.length)
   await Promise.all([...groups].map(async ([limit, indices]) => {
-    const settled = await runWithConcurrency(indices.map((index) => jobs[index].run), limit, signal)
+    const settled = await runWithConcurrency(indices.map((index) => jobs[index].run), limit, signal, gate)
     settled.forEach((result, position) => { results[indices[position]] = result })
   }))
   return results
@@ -64,6 +111,7 @@ export async function runWithConcurrency<T>(
   jobs: readonly (() => Promise<T>)[],
   limit = 2,
   signal?: AbortSignal,
+  gate?: PauseGate,
 ): Promise<PromiseSettledResult<T>[]> {
   if (!Number.isInteger(limit) || limit < 1) throw new RangeError('La concurrencia debe ser un entero mayor o igual a 1.')
 
@@ -72,6 +120,9 @@ export async function runWithConcurrency<T>(
 
   await Promise.all(Array.from({ length: Math.min(limit, jobs.length) }, async () => {
     while (cursor < jobs.length) {
+      // La pausa se consulta ANTES de tomar el índice: lo en vuelo termina, lo nuevo espera.
+      if (gate) await waitWhilePaused(gate, signal)
+      if (cursor >= jobs.length) return
       const index = cursor++
       if (signal?.aborted) {
         results[index] = { status: 'rejected', reason: abortReason() }
