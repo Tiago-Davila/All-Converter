@@ -684,6 +684,10 @@ a:hover { color: var(--ct-violet-deep); }
 .ct-pill-cancelled { color: var(--ct-muted); background: var(--ct-privacy-bg); }
 .ct-pill-cancelled .ct-pill-dot { background: var(--ct-muted-soft); }
 
+/* Pausado: el diferenciador es el ícono de pausa + el texto, nunca el color solo (FR-021) */
+.ct-pill-paused { color: var(--ct-pending-ink); background: var(--ct-privacy-bg); }
+.ct-pill-paused .ct-icn { stroke-width: 2.6; }
+
 .ct-check-draw {
   stroke-dasharray: 26;
   stroke-dashoffset: 26;

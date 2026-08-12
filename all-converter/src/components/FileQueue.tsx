@@ -11,13 +11,13 @@ import { getAvailableConverters, getCommonTargets, getConverterTargets, type Com
 import { MAX_BATCH_FILES, MAX_SCAN_FILES } from '../lib/directory-input'
 import { makeRowError, type ErrorClass } from '../lib/error-class'
 import { exceedsFileLimit, fileLimitMessage } from '../lib/file-limits'
-import { concurrencyForConverter, runPartitioned, watchdogMsForConverter } from '../lib/job-scheduler'
+import { concurrencyForConverter, createPauseGate, runPartitioned, watchdogMsForConverter, type PauseGate } from '../lib/job-scheduler'
 import { saveZip } from '../lib/zip'
 import { Icon, type IconName } from '../ui/components/icons'
 import { LiveRegion, announcementText, type Announcement } from '../ui/a11y/LiveRegion'
 import { playSound } from '../ui/sound/player'
 
-interface BatchItem { state: 'queued' | 'converting' | 'completed' | 'error' | 'cancelled'; percent?: number; error?: string; errorClass?: ErrorClass }
+interface BatchItem { state: 'queued' | 'paused' | 'converting' | 'completed' | 'error' | 'cancelled'; percent?: number; error?: string; errorClass?: ErrorClass }
 /** Cómo terminó un archivo. Alimenta el resumen del lote (FR-016). */
 type Outcome = 'done' | 'error' | 'cancelled'
 interface Choice { converter: Converter; target: string }
@@ -187,6 +187,7 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
   const [downloads, setDownloads] = useState<Record<string, RowDownload[]>>({})
   const [downloadedIds, setDownloadedIds] = useState<Record<string, boolean>>({})
   const [running, setRunning] = useState(false)
+  const [paused, setPaused] = useState(false)
   /** Archivos que se están reintentando de a uno, fuera de un lote. */
   const [retrying, setRetrying] = useState<Record<string, boolean>>({})
   const [zipping, setZipping] = useState(false)
@@ -201,6 +202,7 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
   /** Resumen visible del último lote: listos / con error / cancelados (FR-016). */
   const [summary, setSummary] = useState<Announcement | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const gateRef = useRef<PauseGate | null>(null)
   const downloadsRef = useRef<Record<string, RowDownload[]>>({})
   // Resultados por archivo, acumulados entre corridas, para el ZIP "Descargar todo".
   // Se guardan como Blob y no como ArrayBuffer: el navegador respalda los blobs grandes en
@@ -381,10 +383,35 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
     }
   }
 
+  /**
+   * Pausa y reanuda el lote (FR-018/FR-019). Pausar no interrumpe lo que ya está convirtiendo:
+   * sólo frena el despacho. Las filas que esperan turno pasan a "Pausado" para que el estado
+   * sea visible y no sólo un botón distinto.
+   */
+  const togglePause = () => {
+    const gate = gateRef.current
+    if (!gate) return
+    const goingToPause = !gate.paused
+    if (goingToPause) gate.pause()
+    else gate.resume()
+    setPaused(goingToPause)
+    playSound('toggle')
+    setItems((current) => {
+      const next = { ...current }
+      const from = goingToPause ? 'queued' : 'paused'
+      const to = goingToPause ? 'paused' : 'queued'
+      for (const [id, item] of Object.entries(next)) if (item.state === from) next[id] = { ...item, state: to }
+      return next
+    })
+  }
+
   const convertAll = async () => {
     if (!toConvert.length) return
     const controller = new AbortController()
     abortRef.current = controller
+    const gate = createPauseGate()
+    gateRef.current = gate
+    setPaused(false)
     setRunning(true)
     setAnnouncement(null)
     setSummary(null)
@@ -445,16 +472,24 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
     const outcomes = await runPartitioned(singles.map((entry) => ({
       limit: concurrencyForConverter(chosen(entry)!.converter),
       run: () => convertEntry(entry, controller.signal),
-    })), controller.signal)
+    })), controller.signal, gate)
 
-    for (const outcome of outcomes) {
-      const value = outcome.status === 'fulfilled' ? outcome.value : 'cancelled'
-      if (value === 'done') doneCount += 1
-      else if (value === 'error') errorCount += 1
-      else cancelledCount += 1
-    }
+    outcomes.forEach((outcome, index) => {
+      if (outcome.status === 'fulfilled') {
+        if (outcome.value === 'done') doneCount += 1
+        else if (outcome.value === 'error') errorCount += 1
+        else cancelledCount += 1
+        return
+      }
+      // Rechazado sin haber corrido: se canceló el lote antes de que le tocara el turno.
+      // Sin esto la fila se quedaba en "Pendiente" para siempre.
+      updateItem(singles[index].id, { state: 'cancelled' })
+      cancelledCount += 1
+    })
     } finally {
       setRunning(false)
+      setPaused(false)
+      gateRef.current = null
     }
 
     // Fin de cola: UN solo sonido para todo el lote, nunca por archivo (FR-029).
@@ -541,6 +576,11 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
 
           {(state === undefined || state === 'queued') && choice && (
             <span className="ct-pill ct-pill-pending"><span className="ct-pill-dot" aria-hidden="true" />Pendiente</span>
+          )}
+
+          {/* Pausado: ícono propio + texto, para distinguirlo sin depender del color (FR-021) */}
+          {state === 'paused' && (
+            <span className="ct-pill ct-pill-paused"><Icon name="pause" size={12} className="ct-icn" />Pausado</span>
           )}
 
           {state === 'converting' && (
@@ -777,6 +817,15 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
                   <span className="ct-progress-fill" style={{ width: `${globalPercent ?? 0}%` }} />
                 </span>
                 <span className="ct-progress-pct">{globalPercent ?? 0}%</span>
+                <button
+                  type="button"
+                  className="ct-btn ct-btn-outline"
+                  aria-label={paused ? 'Reanudar lote' : 'Pausar lote'}
+                  onClick={togglePause}
+                >
+                  <Icon name={paused ? 'play' : 'pause'} size={15} />
+                  {paused ? 'Reanudar' : 'Pausar'}
+                </button>
                 <button type="button" className="ct-btn ct-btn-outline" onClick={() => abortRef.current?.abort()}>Cancelar lote</button>
               </>
             )}

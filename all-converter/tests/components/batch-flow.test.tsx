@@ -178,6 +178,50 @@ describe('resumen del lote (FR-016)', () => {
   })
 })
 
+describe('pausar y reanudar el lote (FR-018, FR-019, FR-021)', () => {
+  it('pausar no arranca nada nuevo, marca las filas y reanudar termina el lote', async () => {
+    // Concurrencia 2 para imágenes: con 3 archivos, el tercero espera turno.
+    render(<FileQueue entries={[queueEntry('control-1.png'), queueEntry('control-2.png'), queueEntry('c.png')]} />)
+    for (const name of ['control-1.png', 'control-2.png', 'c.png']) chooseTarget(name, 'JPG')
+    fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
+
+    await waitForControlled('control-1.png')
+    await waitForControlled('control-2.png')
+    expect(converterCalls).toEqual(['control-1.png', 'control-2.png'])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pausar lote' }))
+    expect(await screen.findByText(/c\.png: paused/)).toBeTruthy()
+
+    // Termina un archivo en vuelo: aun así no se despacha el que espera turno.
+    act(() => { controlledJobs.get('control-1.png')!.finish() })
+    await waitFor(() => expect(screen.getByText(/control-1\.png: completed/)).toBeTruthy())
+    expect(converterCalls).toEqual(['control-1.png', 'control-2.png'])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reanudar lote' }))
+    await waitFor(() => expect(converterCalls).toContain('c.png'))
+
+    act(() => { controlledJobs.get('control-2.png')!.finish() })
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Cancelar lote' })).toBeNull())
+    expect(screen.getByText(/c\.png: completed/)).toBeTruthy()
+  })
+
+  it('cancelar estando pausado termina el lote sin reanudar', async () => {
+    render(<FileQueue entries={[queueEntry('control-1.png'), queueEntry('control-2.png'), queueEntry('c.png')]} />)
+    for (const name of ['control-1.png', 'control-2.png', 'c.png']) chooseTarget(name, 'JPG')
+    fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
+    await waitForControlled('control-1.png')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pausar lote' }))
+    await screen.findByText(/c\.png: paused/)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar lote' }))
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Cancelar lote' })).toBeNull())
+    expect(screen.getByText(/c\.png: cancelled/)).toBeTruthy()
+    expect(converterCalls).not.toContain('c.png')
+  })
+})
+
 describe('watchdog por archivo (FR-015)', () => {
   beforeEach(() => { vi.useFakeTimers() })
   afterEach(() => { vi.useRealTimers() })
