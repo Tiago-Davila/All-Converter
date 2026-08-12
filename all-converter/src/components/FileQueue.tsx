@@ -10,7 +10,7 @@ import type { ConversionResult, Converter, FileEntry } from '../converters/types
 import { getAvailableConverters, getCommonTargets, getConverterTargets, type CommonChoice } from '../converters/registry'
 import { MAX_BATCH_FILES, MAX_SCAN_FILES } from '../lib/directory-input'
 import { exceedsFileLimit, fileLimitMessage } from '../lib/file-limits'
-import { concurrencyForConverter, runWithConcurrency } from '../lib/job-scheduler'
+import { concurrencyForConverter, runPartitioned } from '../lib/job-scheduler'
 import { saveZip } from '../lib/zip'
 import { Icon, type IconName } from '../ui/components/icons'
 import { LiveRegion, type Announcement } from '../ui/a11y/LiveRegion'
@@ -339,23 +339,27 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
       }
     }
 
-    const concurrency = singles.reduce((lowest, entry) => Math.min(lowest, concurrencyForConverter(chosen(entry)!.converter)), 2)
-    await runWithConcurrency(singles.map((entry) => async () => {
-      const choice = chosen(entry)!
-      if (controller.signal.aborted) { updateItem(entry.id, { state: 'cancelled' }); return }
-      if (exceedsFileLimit(entry.file, choice.converter)) { updateItem(entry.id, { state: 'error', error: fileLimitMessage(entry.file, choice.converter) }); errorCount += 1; return }
-      updateItem(entry.id, { state: 'converting', percent: 0 })
-      try {
-        const options = await optionsFor(choice, entry, optionsOf(entry))
-        const results = await choice.converter.convert(entry.file, (progress) => updateItem(entry.id, { percent: progress.percent }), options, controller.signal)
-        registerResults(entry, results)
-        updateItem(entry.id, { state: 'completed', percent: 100 })
-        doneCount += 1
-      } catch (thrown) {
-        if (thrown instanceof DOMException && thrown.name === 'AbortError') updateItem(entry.id, { state: 'cancelled' })
-        else { updateItem(entry.id, { state: 'error', error: thrown instanceof Error ? thrown.message : 'La conversión falló por un error inesperado.' }); errorCount += 1 }
-      }
-    }), singles.length ? concurrency : 2, controller.signal)
+    // Dos grupos con su propio tope (FR-017): audio/video de a 1, el resto de a 2. Un solo MP3
+    // ya no baja el lote entero a concurrencia 1.
+    await runPartitioned(singles.map((entry) => ({
+      limit: concurrencyForConverter(chosen(entry)!.converter),
+      run: async () => {
+        const choice = chosen(entry)!
+        if (controller.signal.aborted) { updateItem(entry.id, { state: 'cancelled' }); return }
+        if (exceedsFileLimit(entry.file, choice.converter)) { updateItem(entry.id, { state: 'error', error: fileLimitMessage(entry.file, choice.converter) }); errorCount += 1; return }
+        updateItem(entry.id, { state: 'converting', percent: 0 })
+        try {
+          const options = await optionsFor(choice, entry, optionsOf(entry))
+          const results = await choice.converter.convert(entry.file, (progress) => updateItem(entry.id, { percent: progress.percent }), options, controller.signal)
+          registerResults(entry, results)
+          updateItem(entry.id, { state: 'completed', percent: 100 })
+          doneCount += 1
+        } catch (thrown) {
+          if (thrown instanceof DOMException && thrown.name === 'AbortError') updateItem(entry.id, { state: 'cancelled' })
+          else { updateItem(entry.id, { state: 'error', error: thrown instanceof Error ? thrown.message : 'La conversión falló por un error inesperado.' }); errorCount += 1 }
+        }
+      },
+    })), controller.signal)
     } finally {
       setRunning(false)
     }

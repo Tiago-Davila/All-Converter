@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { concurrencyForConverter, runWithConcurrency } from '../../src/lib/job-scheduler'
+import { concurrencyForConverter, runPartitioned, runWithConcurrency } from '../../src/lib/job-scheduler'
 import { AUDIO_SOURCE, IMAGE_SOURCE } from '../../src/converters/sources'
 
 describe('scheduler', () => {
@@ -59,5 +59,58 @@ describe('scheduler', () => {
   it('asigna concurrencia 1 a media y 2 a conversiones livianas', () => {
     expect(concurrencyForConverter({ from: [AUDIO_SOURCE] })).toBe(1)
     expect(concurrencyForConverter({ from: [IMAGE_SOURCE] })).toBe(2)
+  })
+})
+
+describe('scheduler particionado (FR-017)', () => {
+  /** Trabajo que registra cuántos corren a la vez dentro de su propio grupo. */
+  function tracker() {
+    const state = { active: 0, maximum: 0 }
+    const job = (value: string) => async () => {
+      state.active += 1
+      state.maximum = Math.max(state.maximum, state.active)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      state.active -= 1
+      return value
+    }
+    return { state, job }
+  }
+
+  it('cada grupo respeta su tope y un trabajo de a 1 no frena a los de a 2', async () => {
+    const media = tracker()
+    const light = tracker()
+    const jobs = [
+      { run: media.job('mp3-1'), limit: 1 },
+      ...Array.from({ length: 5 }, (_, index) => ({ run: light.job(`img-${index}`), limit: 2 })),
+      { run: media.job('mp3-2'), limit: 1 },
+    ]
+
+    const results = await runPartitioned(jobs)
+
+    expect(media.state.maximum).toBe(1)
+    expect(light.state.maximum).toBe(2)
+    expect(results.map((result) => (result.status === 'fulfilled' ? result.value : result.reason))).toEqual([
+      'mp3-1', 'img-0', 'img-1', 'img-2', 'img-3', 'img-4', 'mp3-2',
+    ])
+  })
+
+  it('conserva errores en su índice y no arranca pendientes después de cancelar', async () => {
+    const controller = new AbortController()
+    const error = new Error('roto')
+    let started = 0
+    const results = await runPartitioned([
+      { run: async () => { started += 1; throw error }, limit: 2 },
+      { run: async () => { started += 1; controller.abort(); return 'ok' }, limit: 1 },
+      { run: async () => { started += 1; return 'no debe correr' }, limit: 1 },
+    ], controller.signal)
+
+    expect(results[0]).toEqual({ status: 'rejected', reason: error })
+    expect(results[1]).toEqual({ status: 'fulfilled', value: 'ok' })
+    expect(results[2].status).toBe('rejected')
+    expect(started).toBe(2)
+  })
+
+  it('sin trabajos devuelve una lista vacía', async () => {
+    await expect(runPartitioned([])).resolves.toEqual([])
   })
 })
