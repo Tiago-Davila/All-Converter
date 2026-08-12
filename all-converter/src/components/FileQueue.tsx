@@ -5,11 +5,15 @@
  * + texto (FR-015/FR-044). El sonido de fin de cola suena UNA vez por lote,
  * nunca por archivo (FR-029/FR-029b).
  */
-import { useEffect, useRef, useState } from 'react'
-import type { ConversionProgress, ConversionResult, Converter, FileEntry } from '../converters/types'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ConversionProgress, ConversionResult, FileEntry } from '../converters/types'
+import {
+  DEFAULT_ROW_OPTIONS, QueueRow, choiceKey,
+  type BatchItem, type Choice, type QueueRowActions, type RowDownload, type RowOptions,
+} from './QueueRow'
 import { getAvailableConverters, getCommonTargets, getConverterTargets, type CommonChoice } from '../converters/registry'
 import { MAX_BATCH_FILES, MAX_SCAN_FILES } from '../lib/directory-input'
-import { makeRowError, type ErrorClass } from '../lib/error-class'
+import { makeRowError } from '../lib/error-class'
 import { exceedsFileLimit, fileLimitMessage } from '../lib/file-limits'
 import { concurrencyForConverter, createPauseGate, runPartitioned, watchdogMsForConverter, type PauseGate } from '../lib/job-scheduler'
 import { saveZip } from '../lib/zip'
@@ -17,24 +21,14 @@ import { Icon, type IconName } from '../ui/components/icons'
 import { LiveRegion, announcementText, type Announcement } from '../ui/a11y/LiveRegion'
 import { playSound } from '../ui/sound/player'
 
-interface BatchItem { state: 'queued' | 'paused' | 'converting' | 'completed' | 'error' | 'cancelled'; percent?: number; error?: string; errorClass?: ErrorClass }
 /** Cómo terminó un archivo. Alimenta el resumen del lote (FR-016). */
 type Outcome = 'done' | 'error' | 'cancelled'
-interface Choice { converter: Converter; target: string }
-interface RowDownload { url: string; name: string }
-/** Opciones extra por fila según el conversor elegido (calidad, portada…). */
-interface RowOptions { quality: number; maxWidth?: number; visual: 'waveform' | 'cover'; cover?: File; optionsOpen: boolean }
-
-const DEFAULT_ROW_OPTIONS: RowOptions = { quality: 85, visual: 'waveform', optionsOpen: false }
 
 /** Cada archivo elige su propio destino (FR-023b): las opciones salen del registry según su tipo detectado. */
 function choicesFor(entry: FileEntry): Choice[] {
   return getAvailableConverters(entry.detectedType).flatMap((converter) =>
     getConverterTargets(converter, entry.detectedType).map((target) => ({ converter, target })))
 }
-
-const choiceKey = (choice: Choice): string => `${choice.converter.id}::${choice.target}`
-const choiceLabel = (choice: Choice, many: boolean): string => (many ? `${choice.target.toUpperCase()} — ${choice.converter.label}` : choice.target.toUpperCase())
 
 async function optionsFor(choice: Choice, entry: FileEntry, row: RowOptions): Promise<Record<string, unknown>> {
   const options: Record<string, unknown> = { target: choice.target, mime: choice.target === 'jpg' ? 'image/jpeg' : `image/${choice.target}` }
@@ -154,11 +148,6 @@ function categoryOf(entry: FileEntry): Category {
   }
 }
 
-function fmtSize(bytes: number): string {
-  if (!bytes) return '—'
-  return bytes < 1048576 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1048576).toFixed(1)} MB`
-}
-
 export interface FileQueueProps {
   entries: readonly FileEntry[]
   /** Quita un archivo de la cola (lo maneja App, dueño de entries). */
@@ -173,6 +162,9 @@ export interface FileQueueProps {
 
 /** Un rechazo por cupo es siempre el mismo texto: se detecta por prefijo para agruparlos. */
 const QUOTA_REASON_PREFIX = 'Límite de'
+
+/** Referencia estable para las filas sin descargas: evita romper la memoización con `[]`. */
+const EMPTY_DOWNLOADS: readonly RowDownload[] = []
 
 export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skippedByScan = 0 }: FileQueueProps) {
   const ready = entries.filter((entry) => entry.state !== 'rejected')
@@ -216,10 +208,20 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
 
   useEffect(() => { downloadsRef.current = downloads }, [downloads])
 
-  const chosen = (entry: FileEntry): Choice | undefined => choicesFor(entry).find((choice) => choiceKey(choice) === selection[entry.id])
+  // Las opciones de destino sólo dependen del tipo detectado, así que se calculan una vez por
+  // cola y no una vez por fila por render: con 200 archivos eso era 200 recorridos del registry
+  // en cada evento de progreso (FR-022).
+  const choicesById = useMemo(() => {
+    const map = new Map<string, Choice[]>()
+    for (const entry of entries) map.set(entry.id, choicesFor(entry))
+    return map
+  }, [entries])
+
+  const choicesOf = (entry: FileEntry): Choice[] => choicesById.get(entry.id) ?? choicesFor(entry)
+  const chosen = (entry: FileEntry): Choice | undefined => choicesOf(entry).find((choice) => choiceKey(choice) === selection[entry.id])
   const optionsOf = (entry: FileEntry): RowOptions => rowOptions[entry.id] ?? DEFAULT_ROW_OPTIONS
-  const patchOptions = (id: string, patch: Partial<RowOptions>) =>
-    setRowOptions((current) => ({ ...current, [id]: { ...(current[id] ?? DEFAULT_ROW_OPTIONS), ...patch } }))
+  const patchOptions = useCallback((id: string, patch: Partial<RowOptions>) =>
+    setRowOptions((current) => ({ ...current, [id]: { ...(current[id] ?? DEFAULT_ROW_OPTIONS), ...patch } })), [])
 
   const pending = ready.filter((entry) => !chosen(entry))
   const convertible = ready.filter((entry) => chosen(entry))
@@ -239,12 +241,12 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
   }
 
   /** Olvida el resultado y la descarga de un archivo (p. ej. al cambiar su formato destino). */
-  const forgetResult = (id: string) => {
+  const forgetResult = useCallback((id: string) => {
     delete resultsRef.current[id]
     setItems((current) => { if (!current[id]) return current; const next = { ...current }; delete next[id]; return next })
     setDownloads((current) => { if (!current[id]) return current; current[id].forEach((download) => URL.revokeObjectURL(download.url)); const next = { ...current }; delete next[id]; return next })
     setDownloadedIds((current) => { if (!current[id]) return current; const next = { ...current }; delete next[id]; return next })
-  }
+  }, [])
 
   const registerResults = (entry: FileEntry, results: ConversionResult[]) => {
     // Un único Blob por resultado: alimenta la descarga individual Y el ZIP. El ArrayBuffer
@@ -523,169 +525,42 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
   // Archivos con carpeta — agrupados por carpeta y luego por categoría
   const folderGroups = buildFolderGroups(ready)
 
-  const renderRow = (entry: FileEntry) => {
-    const item = items[entry.id]
-    const choice = chosen(entry)
-    const choices = choicesFor(entry)
-    const many = new Set(choices.map((c) => c.target)).size !== choices.length
-    const options = optionsOf(entry)
-    const state = item?.state
-    const rowDownloads = downloads[entry.id] ?? []
-    const meta = CATEGORY_META[categoryOf(entry)]
-    const showImageOptions = choice?.converter.id === 'image-convert'
-    const showMp4Options = choice?.converter.id === 'mp3-to-mp4'
+  // Los callbacks de la fila viajan en un objeto que NUNCA cambia de identidad: si cambiara,
+  // `React.memo` en QueueRow no serviría de nada. Las versiones frescas se leen del ref, que
+  // se actualiza en cada render.
+  const latestRef = useRef({ retryOne, forgetResult, patchOptions, onRemove })
+  latestRef.current = { retryOne, forgetResult, patchOptions, onRemove }
 
-    return (
-      <div className="ct-row" key={entry.id} data-state={state ?? 'pending'}>
-        {state === 'completed' && <span className="ct-row-sweep" aria-hidden="true" />}
-        <span className="ct-row-glyph" aria-hidden="true">
-          <Icon name={meta.icon} size={17} />
-          {state === 'completed' && <span className="ct-row-glow" />}
-        </span>
+  const rowActions = useMemo<QueueRowActions>(() => ({
+    select: (entryId, value) => {
+      if (value) playSound('toggle')
+      setSelection((current) => ({ ...current, [entryId]: value }))
+      // Cambiar el destino de un archivo ya convertido lo vuelve pendiente de nuevo.
+      latestRef.current.forgetResult(entryId)
+    },
+    patchOptions: (entryId, patch) => latestRef.current.patchOptions(entryId, patch),
+    markDownloaded: (entryId) => setDownloadedIds((current) => ({ ...current, [entryId]: true })),
+    retry: (entry) => { void latestRef.current.retryOne(entry) },
+    remove: (entryId) => latestRef.current.onRemove?.(entryId),
+  }), [])
 
-        <div className="ct-row-main">
-          <div className="ct-row-name">{entry.name}</div>
-          <div className="ct-row-sub">
-            {entry.detectedType.extension.toUpperCase()}
-            {choice ? ` → ${choice.target.toUpperCase()}` : ''} · {fmtSize(entry.sizeBytes)}
-          </div>
-        </div>
-
-        <div className="ct-row-side">
-          {/* Selector por archivo (FR-023b); el nombre accesible es el archivo */}
-          <span className="ct-select-wrap">
-            <select
-              className="ct-select"
-              aria-label={entry.name}
-              value={selection[entry.id] ?? ''}
-              onChange={(event) => {
-                if (event.target.value) playSound('toggle')
-                setSelection((current) => ({ ...current, [entry.id]: event.target.value }))
-                // Cambiar el destino de un archivo ya convertido lo vuelve pendiente de nuevo.
-                forgetResult(entry.id)
-              }}
-              disabled={running}
-            >
-              <option value="">Elegí un formato destino</option>
-              {choices.map((c) => <option key={choiceKey(c)} value={choiceKey(c)}>{choiceLabel(c, many)}</option>)}
-            </select>
-            <Icon name="chev" size={14} className="ct-select-chev" />
-          </span>
-
-          {!choice && !state && <span role="note" className="ct-note">sin formato destino: no se convertirá</span>}
-
-          {(state === undefined || state === 'queued') && choice && (
-            <span className="ct-pill ct-pill-pending"><span className="ct-pill-dot" aria-hidden="true" />Pendiente</span>
-          )}
-
-          {/* Pausado: ícono propio + texto, para distinguirlo sin depender del color (FR-021) */}
-          {state === 'paused' && (
-            <span className="ct-pill ct-pill-paused"><Icon name="pause" size={12} className="ct-icn" />Pausado</span>
-          )}
-
-          {state === 'converting' && (
-            <>
-              <span className="ct-progress" role="progressbar" aria-label={`Progreso de ${entry.name}`} aria-valuenow={item?.percent ?? 0} aria-valuemin={0} aria-valuemax={100}>
-                <span className="ct-progress-fill" style={{ width: `${item?.percent ?? 0}%` }} />
-              </span>
-              <span className="ct-progress-pct">{Math.round(item?.percent ?? 0)}%</span>
-            </>
-          )}
-
-          {state === 'completed' && (
-            <>
-              <span className="ct-pill ct-pill-done">
-                <svg viewBox="0 0 24 24" width={13} height={13} className="ct-icn ct-check-draw" aria-hidden="true"><use href="#i-check" /></svg>
-                {downloadedIds[entry.id] ? 'Descargado' : 'Listo'}
-              </span>
-              {rowDownloads.map((download) => (
-                <a
-                  key={download.url}
-                  className="ct-btn ct-btn-dark ct-btn-sm"
-                  href={download.url}
-                  download={download.name}
-                  aria-label={`Descargar ${download.name}`}
-                  onClick={() => setDownloadedIds((current) => ({ ...current, [entry.id]: true }))}
-                >
-                  <Icon name="download" size={14} />
-                  Descargar
-                </a>
-              ))}
-            </>
-          )}
-
-          {state === 'error' && (
-            <span className="ct-pill ct-pill-error"><span className="ct-pill-dot" aria-hidden="true" />Error</span>
-          )}
-
-          {/* Reintentar solo en fallos transitorios: en un determinístico daría lo mismo (FR-013) */}
-          {state === 'error' && item?.errorClass === 'transient' && !running && (
-            <button
-              type="button"
-              className="ct-btn ct-btn-outline ct-btn-sm"
-              aria-label={`Reintentar ${entry.name}`}
-              disabled={retrying[entry.id]}
-              onClick={() => { void retryOne(entry) }}
-            >
-              <Icon name="refresh" size={14} />
-              {retrying[entry.id] ? 'Reintentando…' : 'Reintentar'}
-            </button>
-          )}
-
-          {state === 'cancelled' && (
-            <span className="ct-pill ct-pill-cancelled"><span className="ct-pill-dot" aria-hidden="true" />Cancelado</span>
-          )}
-
-          {showImageOptions && !running && (
-            <button
-              type="button"
-              className="ct-options-toggle"
-              aria-expanded={options.optionsOpen}
-              onClick={() => patchOptions(entry.id, { optionsOpen: !options.optionsOpen })}
-            >
-              Opciones de imagen
-              <Icon name="chev" size={12} />
-            </button>
-          )}
-
-          {onRemove && !running && state !== 'converting' && (
-            <button type="button" className="ct-btn-icon" title="Quitar" aria-label={`Quitar ${entry.name}`} onClick={() => onRemove(entry.id)}>
-              <Icon name="x" size={14} />
-            </button>
-          )}
-        </div>
-
-        {/* Causa concreta del error, visible y accesible (FR-019, FR-043b) */}
-        {state === 'error' && item?.error && <p role="alert" className="ct-row-error-cause">{item.error}</p>}
-
-        {showImageOptions && options.optionsOpen && (
-          <div className="ct-row-options">
-            <label>Calidad {options.quality}%
-              <input aria-label="Calidad" type="range" min="1" max="100" value={options.quality} onChange={(event) => patchOptions(entry.id, { quality: Number(event.target.value) })} />
-            </label>
-            <label>Ancho máximo (px)
-              <input aria-label="Ancho máximo" type="number" min="1" value={options.maxWidth ?? ''} onChange={(event) => patchOptions(entry.id, { maxWidth: event.target.value ? Number(event.target.value) : undefined })} />
-            </label>
-            {choice?.target === 'jpg' && <span className="ct-note">La transparencia se aplana sobre fondo blanco al convertir a JPG.</span>}
-          </div>
-        )}
-
-        {/* MP3→MP4: waveform automático por defecto, portada opcional (FR-028/FR-028b) */}
-        {showMp4Options && (
-          <div className="ct-row-options">
-            <label><input type="radio" name={`visual-${entry.id}`} checked={options.visual === 'waveform'} onChange={() => patchOptions(entry.id, { visual: 'waveform' })} />Generar waveform</label>
-            <label><input type="radio" name={`visual-${entry.id}`} checked={options.visual === 'cover'} onChange={() => patchOptions(entry.id, { visual: 'cover' })} />Usar portada</label>
-            {options.visual === 'cover' && (
-              <label>Imagen de portada
-                <input aria-label="Imagen de portada" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => patchOptions(entry.id, { cover: event.target.files?.[0] })} />
-              </label>
-            )}
-            <span className="ct-note">{options.visual === 'waveform' ? 'Se usará un waveform generado automáticamente.' : 'Se usará tu imagen como fondo del video.'}</span>
-          </div>
-        )}
-      </div>
-    )
-  }
+  const renderRow = (entry: FileEntry) => (
+    <QueueRow
+      key={entry.id}
+      entry={entry}
+      icon={CATEGORY_META[categoryOf(entry)].icon}
+      item={items[entry.id]}
+      choices={choicesOf(entry)}
+      selectedKey={selection[entry.id] ?? ''}
+      options={optionsOf(entry)}
+      downloads={downloads[entry.id] ?? EMPTY_DOWNLOADS}
+      downloaded={downloadedIds[entry.id] ?? false}
+      running={running}
+      retrying={retrying[entry.id] ?? false}
+      canRemove={Boolean(onRemove)}
+      actions={rowActions}
+    />
+  )
 
   /**
    * Renderiza un grupo de categoría (imagen/doc/video/audio) dentro de una carpeta.
