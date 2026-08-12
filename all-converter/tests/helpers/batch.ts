@@ -15,6 +15,7 @@
  * | `malo`       | falla con "dañado o incompleto" |
  * | `protegido`  | falla con una causa **determinística** (contraseña) |
  * | `memoria`    | falla con una causa **transitoria** (sin memoria) |
+ * | `intermitente` | falla la primera vez y anda en el reintento |
  * | `control`    | queda colgado sin reportar progreso hasta que el test lo maneje o se aborte |
  * | cualquier otro | termina de inmediato con éxito |
  */
@@ -69,6 +70,10 @@ async function fakeConvert(file: File, onProgress: (progress: ConversionProgress
   if (file.name.includes('malo')) throw new Error('El archivo parece estar dañado o incompleto.')
   if (file.name.includes('protegido')) throw new Error('El archivo está protegido con contraseña.')
   if (file.name.includes('memoria')) throw new Error('No hay memoria suficiente para procesar el archivo.')
+  // Falla la primera vez y anda en el reintento: es el caso que justifica ofrecerlo.
+  if (file.name.includes('intermitente') && converterCalls.filter((name) => name === file.name).length === 1) {
+    throw new Error('No hay memoria suficiente para procesar el archivo.')
+  }
   if (file.name.includes('control')) return controlled(file, onProgress, signal, target)
   return output(file, target)
 }

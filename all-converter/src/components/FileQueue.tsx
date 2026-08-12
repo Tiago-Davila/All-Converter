@@ -9,14 +9,17 @@ import { useEffect, useRef, useState } from 'react'
 import type { ConversionProgress, ConversionResult, Converter, FileEntry } from '../converters/types'
 import { getAvailableConverters, getCommonTargets, getConverterTargets, type CommonChoice } from '../converters/registry'
 import { MAX_BATCH_FILES, MAX_SCAN_FILES } from '../lib/directory-input'
+import { makeRowError, type ErrorClass } from '../lib/error-class'
 import { exceedsFileLimit, fileLimitMessage } from '../lib/file-limits'
 import { concurrencyForConverter, runPartitioned, watchdogMsForConverter } from '../lib/job-scheduler'
 import { saveZip } from '../lib/zip'
 import { Icon, type IconName } from '../ui/components/icons'
-import { LiveRegion, type Announcement } from '../ui/a11y/LiveRegion'
+import { LiveRegion, announcementText, type Announcement } from '../ui/a11y/LiveRegion'
 import { playSound } from '../ui/sound/player'
 
-interface BatchItem { state: 'queued' | 'converting' | 'completed' | 'error' | 'cancelled'; percent?: number; error?: string }
+interface BatchItem { state: 'queued' | 'converting' | 'completed' | 'error' | 'cancelled'; percent?: number; error?: string; errorClass?: ErrorClass }
+/** Cómo terminó un archivo. Alimenta el resumen del lote (FR-016). */
+type Outcome = 'done' | 'error' | 'cancelled'
 interface Choice { converter: Converter; target: string }
 interface RowDownload { url: string; name: string }
 /** Opciones extra por fila según el conversor elegido (calidad, portada…). */
@@ -184,6 +187,8 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
   const [downloads, setDownloads] = useState<Record<string, RowDownload[]>>({})
   const [downloadedIds, setDownloadedIds] = useState<Record<string, boolean>>({})
   const [running, setRunning] = useState(false)
+  /** Archivos que se están reintentando de a uno, fuera de un lote. */
+  const [retrying, setRetrying] = useState<Record<string, boolean>>({})
   const [zipping, setZipping] = useState(false)
   const [zipPercent, setZipPercent] = useState(0)
   const [zipError, setZipError] = useState<string>()
@@ -193,6 +198,8 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
   const [folderZipPercent, setFolderZipPercent] = useState<Record<string, number>>({})
   const [folderZipError, setFolderZipError] = useState<Record<string, string>>({})
   const [announcement, setAnnouncement] = useState<Announcement | null>(null)
+  /** Resumen visible del último lote: listos / con error / cancelados (FR-016). */
+  const [summary, setSummary] = useState<Announcement | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const downloadsRef = useRef<Record<string, RowDownload[]>>({})
   // Resultados por archivo, acumulados entre corridas, para el ZIP "Descargar todo".
@@ -219,6 +226,15 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
   const alreadyDone = convertible.length - toConvert.length
 
   const updateItem = (id: string, patch: Partial<BatchItem>) => setItems((current) => ({ ...current, [id]: { ...current[id], ...patch } as BatchItem }))
+
+  /**
+   * Marca la fila como fallida clasificando la causa: de ahí sale si se ofrece "Reintentar"
+   * (FR-013). Ofrecerlo en un fallo determinístico sería prometer algo que no va a pasar.
+   */
+  const failItem = (id: string, message: string) => {
+    const rowError = makeRowError(message)
+    updateItem(id, { state: 'error', error: rowError.message, errorClass: rowError.errorClass })
+  }
 
   /** Olvida el resultado y la descarga de un archivo (p. ej. al cambiar su formato destino). */
   const forgetResult = (id: string) => {
@@ -326,12 +342,52 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
     }
   }
 
+  /**
+   * Convierte UN archivo y refleja el desenlace en su fila. Es el único camino de conversión
+   * individual: lo usan el lote y el reintento, así que reintentar no puede divergir (FR-014).
+   */
+  const convertEntry = async (entry: FileEntry, signal: AbortSignal): Promise<Outcome> => {
+    const choice = chosen(entry)
+    if (!choice) return 'cancelled'
+    if (signal.aborted) { updateItem(entry.id, { state: 'cancelled' }); return 'cancelled' }
+    if (exceedsFileLimit(entry.file, choice.converter)) { failItem(entry.id, fileLimitMessage(entry.file, choice.converter)); return 'error' }
+    updateItem(entry.id, { state: 'converting', percent: 0 })
+    try {
+      const options = await optionsFor(choice, entry, optionsOf(entry))
+      const results = await convertWatched(choice, entry.file, (progress) => updateItem(entry.id, { percent: progress.percent }), options, signal)
+      registerResults(entry, results)
+      updateItem(entry.id, { state: 'completed', percent: 100, error: undefined, errorClass: undefined })
+      return 'done'
+    } catch (thrown) {
+      if (thrown instanceof DOMException && thrown.name === 'AbortError') { updateItem(entry.id, { state: 'cancelled' }); return 'cancelled' }
+      failItem(entry.id, thrown instanceof Error ? thrown.message : 'La conversión falló por un error inesperado.')
+      return 'error'
+    }
+  }
+
+  /**
+   * Reintenta un solo archivo (FR-014). Vuelve a leer el `File` original —los ArrayBuffer de
+   * entrada quedan detached al transferirse al worker— y no toca la cola ni los resultados de
+   * los demás. Sin sonido: el de fin de cola es por lote, nunca por archivo (FR-029).
+   */
+  const retryOne = async (entry: FileEntry) => {
+    if (running || retrying[entry.id]) return
+    setRetrying((current) => ({ ...current, [entry.id]: true }))
+    const controller = new AbortController()
+    try {
+      await convertEntry(entry, controller.signal)
+    } finally {
+      setRetrying((current) => { const next = { ...current }; delete next[entry.id]; return next })
+    }
+  }
+
   const convertAll = async () => {
     if (!toConvert.length) return
     const controller = new AbortController()
     abortRef.current = controller
     setRunning(true)
     setAnnouncement(null)
+    setSummary(null)
     setZipError(undefined)
     // Preservar lo ya convertido: solo se limpian y encolan los pendientes.
     setDownloads((current) => {
@@ -345,6 +401,7 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
     // Contadores del lote para el sonido y el anuncio consolidados (FR-029c, FR-043)
     let doneCount = 0
     let errorCount = 0
+    let cancelledCount = 0
 
     // Todo el cuerpo va en try/finally: pase lo que pase, el lote deja de estar "corriendo".
     // Antes `setRunning(false)` estaba en el camino feliz y un fallo posterior dejaba la UI
@@ -366,42 +423,36 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
 
     for (const { choice, entries: grouped } of groups.values()) {
       const oversized = grouped.find((entry) => exceedsFileLimit(entry.file, choice.converter))
-      if (oversized) { updateItem(oversized.id, { state: 'error', error: fileLimitMessage(oversized.file, choice.converter) }); errorCount += 1; continue }
+      if (oversized) { failItem(oversized.id, fileLimitMessage(oversized.file, choice.converter)); errorCount += 1; continue }
       grouped.forEach((entry) => updateItem(entry.id, { state: 'converting', percent: 0 }))
       try {
         const options = await optionsFor(choice, grouped[0], optionsOf(grouped[0]))
         const results = await choice.converter.convertMany!(grouped.map((entry) => entry.file), (progress) => grouped.forEach((entry) => updateItem(entry.id, { percent: progress.percent })), options, controller.signal)
         registerResults(grouped[0], results)
-        grouped.forEach((entry) => updateItem(entry.id, { state: 'completed', percent: 100 }))
+        grouped.forEach((entry) => updateItem(entry.id, { state: 'completed', percent: 100, error: undefined, errorClass: undefined }))
         doneCount += grouped.length
       } catch (thrown) {
         const cancelled = thrown instanceof DOMException && thrown.name === 'AbortError'
-        grouped.forEach((entry) => updateItem(entry.id, { state: cancelled ? 'cancelled' : 'error', error: thrown instanceof Error ? thrown.message : 'Falló la conversión conjunta.' }))
-        if (!cancelled) errorCount += grouped.length
+        const message = thrown instanceof Error ? thrown.message : 'Falló la conversión conjunta.'
+        grouped.forEach((entry) => { if (cancelled) updateItem(entry.id, { state: 'cancelled' }); else failItem(entry.id, message) })
+        if (cancelled) cancelledCount += grouped.length
+        else errorCount += grouped.length
       }
     }
 
     // Dos grupos con su propio tope (FR-017): audio/video de a 1, el resto de a 2. Un solo MP3
     // ya no baja el lote entero a concurrencia 1.
-    await runPartitioned(singles.map((entry) => ({
+    const outcomes = await runPartitioned(singles.map((entry) => ({
       limit: concurrencyForConverter(chosen(entry)!.converter),
-      run: async () => {
-        const choice = chosen(entry)!
-        if (controller.signal.aborted) { updateItem(entry.id, { state: 'cancelled' }); return }
-        if (exceedsFileLimit(entry.file, choice.converter)) { updateItem(entry.id, { state: 'error', error: fileLimitMessage(entry.file, choice.converter) }); errorCount += 1; return }
-        updateItem(entry.id, { state: 'converting', percent: 0 })
-        try {
-          const options = await optionsFor(choice, entry, optionsOf(entry))
-          const results = await convertWatched(choice, entry.file, (progress) => updateItem(entry.id, { percent: progress.percent }), options, controller.signal)
-          registerResults(entry, results)
-          updateItem(entry.id, { state: 'completed', percent: 100 })
-          doneCount += 1
-        } catch (thrown) {
-          if (thrown instanceof DOMException && thrown.name === 'AbortError') updateItem(entry.id, { state: 'cancelled' })
-          else { updateItem(entry.id, { state: 'error', error: thrown instanceof Error ? thrown.message : 'La conversión falló por un error inesperado.' }); errorCount += 1 }
-        }
-      },
+      run: () => convertEntry(entry, controller.signal),
     })), controller.signal)
+
+    for (const outcome of outcomes) {
+      const value = outcome.status === 'fulfilled' ? outcome.value : 'cancelled'
+      if (value === 'done') doneCount += 1
+      else if (value === 'error') errorCount += 1
+      else cancelledCount += 1
+    }
     } finally {
       setRunning(false)
     }
@@ -410,8 +461,10 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
     // Cancelar todo no es un logro: sin terminados ni errores no suena nada.
     if (errorCount > 0) playSound('queue-done-errors')
     else if (doneCount > 0) playSound('queue-done-ok')
-    // Anuncio consolidado por lote para lectores de pantalla (FR-043)
-    if (doneCount > 0 || errorCount > 0) setAnnouncement({ done: doneCount, failed: errorCount })
+    // Anuncio consolidado por lote para lectores de pantalla (FR-043) con el resumen
+    // completo del lote: listos, con error y cancelados (006 FR-016).
+    if (doneCount > 0 || errorCount > 0 || cancelledCount > 0) setAnnouncement({ done: doneCount, failed: errorCount, cancelled: cancelledCount })
+    setSummary({ done: doneCount, failed: errorCount, cancelled: cancelledCount })
   }
 
   const tracked = convertible.map((entry) => items[entry.id]).filter((item): item is BatchItem => Boolean(item))
@@ -523,6 +576,20 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
 
           {state === 'error' && (
             <span className="ct-pill ct-pill-error"><span className="ct-pill-dot" aria-hidden="true" />Error</span>
+          )}
+
+          {/* Reintentar solo en fallos transitorios: en un determinístico daría lo mismo (FR-013) */}
+          {state === 'error' && item?.errorClass === 'transient' && !running && (
+            <button
+              type="button"
+              className="ct-btn ct-btn-outline ct-btn-sm"
+              aria-label={`Reintentar ${entry.name}`}
+              disabled={retrying[entry.id]}
+              onClick={() => { void retryOne(entry) }}
+            >
+              <Icon name="refresh" size={14} />
+              {retrying[entry.id] ? 'Reintentando…' : 'Reintentar'}
+            </button>
           )}
 
           {state === 'cancelled' && (
@@ -715,6 +782,14 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
             )}
           </div>
         </div>
+      )}
+
+      {/* Resumen del lote terminado: listos / con error / cancelados (FR-016) */}
+      {summary && !running && (
+        <p className="ct-note ct-batch-summary">
+          <Icon name="info" size={14} />
+          Lote terminado: {announcementText(summary)}.
+        </p>
       )}
 
       {pending.length > 0 && ready.length > 0 && (

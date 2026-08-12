@@ -124,6 +124,60 @@ describe('flujo de lote', () => {
   })
 })
 
+describe('reintento por archivo (FR-013, FR-014)', () => {
+  it('ofrece reintentar en el fallo transitorio y no en el determinístico', async () => {
+    render(<FileQueue entries={[queueEntry('memoria.png'), queueEntry('protegido.png')]} />)
+    chooseTarget('memoria.png', 'JPG')
+    chooseTarget('protegido.png', 'JPG')
+    fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
+
+    await waitFor(() => expect(screen.getByText(/protegido\.png: error/)).toBeTruthy())
+    expect(screen.getByText(/memoria\.png: error/)).toBeTruthy()
+
+    expect(screen.getByRole('button', { name: 'Reintentar memoria.png' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Reintentar protegido.png' })).toBeNull()
+  })
+
+  it('reintentar reprocesa solo ese archivo y preserva los resultados de los demás', async () => {
+    render(<FileQueue entries={[queueEntry('a.png'), queueEntry('intermitente.png')]} />)
+    chooseTarget('a.png', 'JPG')
+    chooseTarget('intermitente.png', 'JPG')
+    fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
+
+    await waitFor(() => expect(screen.getByText(/intermitente\.png: error/)).toBeTruthy())
+    expect(screen.getByText(/a\.png: completed/)).toBeTruthy()
+    expect(converterCalls).toEqual(['a.png', 'intermitente.png'])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar intermitente.png' }))
+
+    await waitFor(() => expect(screen.getByText(/intermitente\.png: completed/)).toBeTruthy())
+    // Solo se reprocesó el archivo reintentado; a.png sigue listo y sin reconvertir.
+    expect(converterCalls).toEqual(['a.png', 'intermitente.png', 'intermitente.png'])
+    expect(screen.getByText(/a\.png: completed/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Reintentar intermitente.png' })).toBeNull()
+  })
+})
+
+describe('resumen del lote (FR-016)', () => {
+  it('informa listos, con error y cancelados', async () => {
+    render(<FileQueue entries={[queueEntry('a.png'), queueEntry('malo.png'), queueEntry('control-1.png')]} />)
+    chooseTarget('a.png', 'JPG')
+    chooseTarget('malo.png', 'JPG')
+    chooseTarget('control-1.png', 'JPG')
+    fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
+
+    await waitForControlled('control-1.png')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar lote' }))
+
+    const summary = await screen.findByText(/Lote terminado/)
+    expect(summary.textContent).toContain('1 archivo listo')
+    expect(summary.textContent).toContain('1 con error')
+    expect(summary.textContent).toContain('1 cancelado')
+    // El mismo resumen se anuncia una sola vez para lectores de pantalla.
+    await waitFor(() => expect(screen.getByTestId('live-region').textContent).toContain('1 cancelado'))
+  })
+})
+
 describe('watchdog por archivo (FR-015)', () => {
   beforeEach(() => { vi.useFakeTimers() })
   afterEach(() => { vi.useRealTimers() })
@@ -146,6 +200,8 @@ describe('watchdog por archivo (FR-015)', () => {
 
     expect(screen.getByText(/control-colgado\.png: error/)).toBeTruthy()
     expect(screen.getByRole('alert').textContent).toContain('inactividad')
+    // El vencimiento es transitorio: reintentar tiene sentido y se ofrece (FR-013).
+    expect(screen.getByRole('button', { name: 'Reintentar control-colgado.png' })).toBeTruthy()
     // El lote terminó: ya no está corriendo.
     expect(screen.queryByRole('button', { name: 'Cancelar lote' })).toBeNull()
   })
