@@ -23,10 +23,20 @@ vi.mock('../../src/converters/registry', () => {
       return [{ name: file.name.replace(/\.csv$/, `.${target}`), mime: 'application/vnd.ms-excel', buffer: new TextEncoder().encode(target).buffer, sizeBytes: 3 }]
     },
   }
+  const availableFor = (type: DetectedFileType) => (type.kind === 'image' ? [image] : [sheet])
+  const choicesFor = (entry: { detectedType: DetectedFileType }) =>
+    availableFor(entry.detectedType).flatMap((converter) => converter.to.split('|').map((target) => ({ converter, target })))
   return {
     converters: [image, sheet],
-    getAvailableConverters: (type: DetectedFileType) => (type.kind === 'image' ? [image] : [sheet]),
+    getAvailableConverters: (type: DetectedFileType) => availableFor(type),
     getConverterTargets: (converter: { to: string }) => converter.to.split('|'),
+    // Los destinos que TODOS los archivos del grupo pueden producir (selector por carpeta).
+    getCommonTargets: (entries: readonly { detectedType: DetectedFileType }[]) => {
+      if (!entries.length) return []
+      const rest = entries.slice(1)
+      return choicesFor(entries[0]).filter((choice) =>
+        rest.every((entry) => choicesFor(entry).some((c) => c.converter.id === choice.converter.id && c.target === choice.target)))
+    },
   }
 })
 
@@ -55,7 +65,7 @@ describe('flujo de lote', () => {
     chooseTarget('b.png', 'WEBP')
     chooseTarget('datos.csv', 'XLSX')
     fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Descargar ZIP' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Descargar ZIP' })).toBeTruthy())
     expect(screen.getByText(/a\.png: completed/)).toBeTruthy()
     expect(screen.getByText(/b\.png: completed/)).toBeTruthy()
     expect(screen.getByText(/datos\.csv: completed/)).toBeTruthy()
@@ -74,7 +84,7 @@ describe('flujo de lote', () => {
     chooseTarget('a.png', 'JPG')
     expect(screen.getByText(/1 archivo\(s\) sin formato destino/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Descargar ZIP' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Descargar ZIP' })).toBeTruthy())
     expect(screen.getByText(/a\.png: completed/)).toBeTruthy()
     expect(screen.queryByText(/datos\.csv: completed/)).toBeNull()
   })
@@ -84,7 +94,7 @@ describe('flujo de lote', () => {
     chooseTarget('a.png', 'JPG')
     chooseTarget('malo.png', 'JPG')
     fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Descargar ZIP' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Descargar ZIP' })).toBeTruthy())
     expect(screen.getByText(/a\.png: completed/)).toBeTruthy()
     expect(screen.getByText(/malo\.png: error/)).toBeTruthy()
     expect(screen.getByRole('alert').textContent).toContain('dañado')
@@ -105,7 +115,7 @@ describe('flujo de lote', () => {
     const { rerender } = render(<FileQueue entries={[imageEntry('a.png')]} />)
     chooseTarget('a.png', 'JPG')
     fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Descargar ZIP' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Descargar ZIP' })).toBeTruthy())
     expect(hoisted.imageCalls).toEqual(['a.png'])
 
     // Llega un archivo nuevo a la cola (a.png ya está listo).
