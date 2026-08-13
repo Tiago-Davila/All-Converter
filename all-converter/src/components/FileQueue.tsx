@@ -5,33 +5,30 @@
  * + texto (FR-015/FR-044). El sonido de fin de cola suena UNA vez por lote,
  * nunca por archivo (FR-029/FR-029b).
  */
-import { useEffect, useRef, useState } from 'react'
-import type { ConversionResult, Converter, FileEntry } from '../converters/types'
-import { getAvailableConverters, getConverterTargets } from '../converters/registry'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ConversionProgress, ConversionResult, FileEntry } from '../converters/types'
+import {
+  DEFAULT_ROW_OPTIONS, QueueRow, choiceKey,
+  type BatchItem, type Choice, type QueueRowActions, type RowDownload, type RowOptions,
+} from './QueueRow'
+import { getAvailableConverters, getCommonTargets, getConverterTargets, type CommonChoice } from '../converters/registry'
 import { MAX_BATCH_FILES, MAX_SCAN_FILES } from '../lib/directory-input'
+import { makeRowError } from '../lib/error-class'
 import { exceedsFileLimit, fileLimitMessage } from '../lib/file-limits'
-import { concurrencyForConverter, runWithConcurrency } from '../lib/job-scheduler'
+import { concurrencyForConverter, createPauseGate, runPartitioned, watchdogMsForConverter, type PauseGate } from '../lib/job-scheduler'
 import { saveZip } from '../lib/zip'
 import { Icon, type IconName } from '../ui/components/icons'
-import { LiveRegion, type Announcement } from '../ui/a11y/LiveRegion'
+import { LiveRegion, announcementText, type Announcement } from '../ui/a11y/LiveRegion'
 import { playSound } from '../ui/sound/player'
 
-interface BatchItem { state: 'queued' | 'converting' | 'completed' | 'error' | 'cancelled'; percent?: number; error?: string }
-interface Choice { converter: Converter; target: string }
-interface RowDownload { url: string; name: string }
-/** Opciones extra por fila según el conversor elegido (calidad, portada…). */
-interface RowOptions { quality: number; maxWidth?: number; visual: 'waveform' | 'cover'; cover?: File; optionsOpen: boolean }
-
-const DEFAULT_ROW_OPTIONS: RowOptions = { quality: 85, visual: 'waveform', optionsOpen: false }
+/** Cómo terminó un archivo. Alimenta el resumen del lote (FR-016). */
+type Outcome = 'done' | 'error' | 'cancelled'
 
 /** Cada archivo elige su propio destino (FR-023b): las opciones salen del registry según su tipo detectado. */
 function choicesFor(entry: FileEntry): Choice[] {
   return getAvailableConverters(entry.detectedType).flatMap((converter) =>
     getConverterTargets(converter, entry.detectedType).map((target) => ({ converter, target })))
 }
-
-const choiceKey = (choice: Choice): string => `${choice.converter.id}::${choice.target}`
-const choiceLabel = (choice: Choice, many: boolean): string => (many ? `${choice.target.toUpperCase()} — ${choice.converter.label}` : choice.target.toUpperCase())
 
 async function optionsFor(choice: Choice, entry: FileEntry, row: RowOptions): Promise<Record<string, unknown>> {
   const options: Record<string, unknown> = { target: choice.target, mime: choice.target === 'jpg' ? 'image/jpeg' : `image/${choice.target}` }
@@ -52,7 +49,86 @@ async function optionsFor(choice: Choice, entry: FileEntry, row: RowOptions): Pr
   return options
 }
 
-// ── Categorías (mockup: Imágenes / Documentos / Video / Audio) ───────────────
+/** Texto del vencimiento del watchdog. Es transitorio: reintentar puede funcionar. */
+function watchdogMessage(budgetMs: number): string {
+  return `Se detuvo por inactividad: el conversor no reportó avance en ${Math.round(budgetMs / 60000)} minutos.`
+}
+
+/**
+ * Corre un conversor con watchdog propio (FR-015, contracts/reliability.md).
+ *
+ * Cada archivo tiene su `AbortController`, encadenado al del lote: abortar el lote los aborta
+ * a todos, pero un archivo colgado se puede matar sin tocar a los demás. El plazo se reinicia
+ * con cada evento de progreso, así que mide falta de avance y no duración.
+ */
+async function convertWatched(
+  choice: Choice,
+  file: File,
+  onProgress: (progress: ConversionProgress) => void,
+  options: Record<string, unknown>,
+  batchSignal: AbortSignal,
+): Promise<ConversionResult[]> {
+  const budget = watchdogMsForConverter(choice.converter)
+  const controller = new AbortController()
+  const relayAbort = () => controller.abort()
+  if (batchSignal.aborted) controller.abort()
+  else batchSignal.addEventListener('abort', relayAbort, { once: true })
+
+  let timedOut = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const arm = () => { if (timer) clearTimeout(timer); timer = setTimeout(() => { timedOut = true; controller.abort() }, budget) }
+  arm()
+
+  try {
+    return await choice.converter.convert(file, (progress) => { arm(); onProgress(progress) }, options, controller.signal)
+  } catch (thrown) {
+    // El vencimiento no es una cancelación del usuario: es un error transitorio de ese archivo.
+    if (timedOut) throw new Error(watchdogMessage(budget))
+    throw thrown
+  } finally {
+    if (timer) clearTimeout(timer)
+    batchSignal.removeEventListener('abort', relayAbort)
+  }
+}
+
+// ── Agrupación por carpeta ────────────────────────────────────────────────────
+
+/** Extrae el nombre de carpeta del relativePath (primer segmento), o null si es archivo suelto. */
+function folderOf(entry: FileEntry): string | null {
+  if (!entry.relativePath) return null
+  const parts = entry.relativePath.split('/')
+  // relativePath = "carpeta/archivo.ext" → partes[0] = "carpeta"
+  // Si solo hay un segmento, es un archivo suelto (no está dentro de subdirectorio)
+  return parts.length > 1 ? parts[0] : null
+}
+
+interface FolderCategoryGroup { category: Category; list: FileEntry[] }
+interface FolderGroup { folderName: string; byCategory: FolderCategoryGroup[] }
+
+/** Archivos con carpeta, agrupados por carpeta y luego por categoría. */
+function buildFolderGroups(entries: readonly FileEntry[]): FolderGroup[] {
+  const map = new Map<string, FileEntry[]>()
+  for (const entry of entries) {
+    const folder = folderOf(entry)
+    if (!folder) continue
+    const list = map.get(folder) ?? []
+    list.push(entry)
+    map.set(folder, list)
+  }
+  return [...map.entries()].map(([folderName, folderEntries]) => ({
+    folderName,
+    byCategory: CATEGORY_ORDER
+      .map((category) => ({ category, list: folderEntries.filter((e) => categoryOf(e) === category) }))
+      .filter((g) => g.list.length > 0),
+  }))
+}
+
+/** Archivos sin carpeta (relativePath vacío o de un solo segmento). */
+function looseEntries(entries: readonly FileEntry[]): FileEntry[] {
+  return entries.filter((entry) => folderOf(entry) === null)
+}
+
+
 
 type Category = 'image' | 'document' | 'video' | 'audio'
 const CATEGORY_ORDER: readonly Category[] = ['image', 'document', 'video', 'audio']
@@ -72,11 +148,6 @@ function categoryOf(entry: FileEntry): Category {
   }
 }
 
-function fmtSize(bytes: number): string {
-  if (!bytes) return '—'
-  return bytes < 1048576 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1048576).toFixed(1)} MB`
-}
-
 export interface FileQueueProps {
   entries: readonly FileEntry[]
   /** Quita un archivo de la cola (lo maneja App, dueño de entries). */
@@ -92,6 +163,9 @@ export interface FileQueueProps {
 /** Un rechazo por cupo es siempre el mismo texto: se detecta por prefijo para agruparlos. */
 const QUOTA_REASON_PREFIX = 'Límite de'
 
+/** Referencia estable para las filas sin descargas: evita romper la memoización con `[]`. */
+const EMPTY_DOWNLOADS: readonly RowDownload[] = []
+
 export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skippedByScan = 0 }: FileQueueProps) {
   const ready = entries.filter((entry) => entry.state !== 'rejected')
   const allRejected = entries.filter((entry) => entry.state === 'rejected')
@@ -105,11 +179,22 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
   const [downloads, setDownloads] = useState<Record<string, RowDownload[]>>({})
   const [downloadedIds, setDownloadedIds] = useState<Record<string, boolean>>({})
   const [running, setRunning] = useState(false)
+  const [paused, setPaused] = useState(false)
+  /** Archivos que se están reintentando de a uno, fuera de un lote. */
+  const [retrying, setRetrying] = useState<Record<string, boolean>>({})
   const [zipping, setZipping] = useState(false)
   const [zipPercent, setZipPercent] = useState(0)
   const [zipError, setZipError] = useState<string>()
+  // Selectores de formato por carpeta+categoría: clave = "carpeta::categoría"
+  const [folderSelection, setFolderSelection] = useState<Record<string, string>>({})
+  const [folderZipping, setFolderZipping] = useState<Record<string, boolean>>({})
+  const [folderZipPercent, setFolderZipPercent] = useState<Record<string, number>>({})
+  const [folderZipError, setFolderZipError] = useState<Record<string, string>>({})
   const [announcement, setAnnouncement] = useState<Announcement | null>(null)
+  /** Resumen visible del último lote: listos / con error / cancelados (FR-016). */
+  const [summary, setSummary] = useState<Announcement | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const gateRef = useRef<PauseGate | null>(null)
   const downloadsRef = useRef<Record<string, RowDownload[]>>({})
   // Resultados por archivo, acumulados entre corridas, para el ZIP "Descargar todo".
   // Se guardan como Blob y no como ArrayBuffer: el navegador respalda los blobs grandes en
@@ -123,10 +208,20 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
 
   useEffect(() => { downloadsRef.current = downloads }, [downloads])
 
-  const chosen = (entry: FileEntry): Choice | undefined => choicesFor(entry).find((choice) => choiceKey(choice) === selection[entry.id])
+  // Las opciones de destino sólo dependen del tipo detectado, así que se calculan una vez por
+  // cola y no una vez por fila por render: con 200 archivos eso era 200 recorridos del registry
+  // en cada evento de progreso (FR-022).
+  const choicesById = useMemo(() => {
+    const map = new Map<string, Choice[]>()
+    for (const entry of entries) map.set(entry.id, choicesFor(entry))
+    return map
+  }, [entries])
+
+  const choicesOf = (entry: FileEntry): Choice[] => choicesById.get(entry.id) ?? choicesFor(entry)
+  const chosen = (entry: FileEntry): Choice | undefined => choicesOf(entry).find((choice) => choiceKey(choice) === selection[entry.id])
   const optionsOf = (entry: FileEntry): RowOptions => rowOptions[entry.id] ?? DEFAULT_ROW_OPTIONS
-  const patchOptions = (id: string, patch: Partial<RowOptions>) =>
-    setRowOptions((current) => ({ ...current, [id]: { ...(current[id] ?? DEFAULT_ROW_OPTIONS), ...patch } }))
+  const patchOptions = useCallback((id: string, patch: Partial<RowOptions>) =>
+    setRowOptions((current) => ({ ...current, [id]: { ...(current[id] ?? DEFAULT_ROW_OPTIONS), ...patch } })), [])
 
   const pending = ready.filter((entry) => !chosen(entry))
   const convertible = ready.filter((entry) => chosen(entry))
@@ -136,13 +231,53 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
 
   const updateItem = (id: string, patch: Partial<BatchItem>) => setItems((current) => ({ ...current, [id]: { ...current[id], ...patch } as BatchItem }))
 
+  /**
+   * Progreso throttleado a un cuadro (FR-023): ffmpeg puede emitir decenas de eventos por
+   * segundo y por archivo. Se acumula el último porcentaje de cada uno en un ref y se vuelca
+   * en un solo `setItems` por frame, en vez de uno por evento.
+   */
+  const progressRef = useRef<Record<string, number>>({})
+  const frameRef = useRef<number | null>(null)
+
+  const flushProgress = useCallback(() => {
+    frameRef.current = null
+    const pending = progressRef.current
+    progressRef.current = {}
+    const ids = Object.keys(pending)
+    if (!ids.length) return
+    setItems((current) => {
+      const next = { ...current }
+      // Sólo pisa el porcentaje de lo que sigue convirtiendo: un evento tardío no puede
+      // revivir una fila ya terminada.
+      for (const id of ids) if (next[id]?.state === 'converting') next[id] = { ...next[id], percent: pending[id] }
+      return next
+    })
+  }, [])
+
+  const reportProgress = useCallback((id: string, percent?: number) => {
+    if (percent === undefined) return
+    progressRef.current[id] = percent
+    if (frameRef.current === null) frameRef.current = requestAnimationFrame(flushProgress)
+  }, [flushProgress])
+
+  useEffect(() => () => { if (frameRef.current !== null) cancelAnimationFrame(frameRef.current) }, [])
+
+  /**
+   * Marca la fila como fallida clasificando la causa: de ahí sale si se ofrece "Reintentar"
+   * (FR-013). Ofrecerlo en un fallo determinístico sería prometer algo que no va a pasar.
+   */
+  const failItem = (id: string, message: string) => {
+    const rowError = makeRowError(message)
+    updateItem(id, { state: 'error', error: rowError.message, errorClass: rowError.errorClass })
+  }
+
   /** Olvida el resultado y la descarga de un archivo (p. ej. al cambiar su formato destino). */
-  const forgetResult = (id: string) => {
+  const forgetResult = useCallback((id: string) => {
     delete resultsRef.current[id]
     setItems((current) => { if (!current[id]) return current; const next = { ...current }; delete next[id]; return next })
     setDownloads((current) => { if (!current[id]) return current; current[id].forEach((download) => URL.revokeObjectURL(download.url)); const next = { ...current }; delete next[id]; return next })
     setDownloadedIds((current) => { if (!current[id]) return current; const next = { ...current }; delete next[id]; return next })
-  }
+  }, [])
 
   const registerResults = (entry: FileEntry, results: ConversionResult[]) => {
     // Un único Blob por resultado: alimenta la descarga individual Y el ZIP. El ArrayBuffer
@@ -193,12 +328,126 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
     }
   }
 
+  /** Clave para el selector de carpeta+categoría */
+  const folderCatKey = (folderName: string, category: Category) => `${folderName}::${category}`
+
+  /** Aplica un choiceKey a todos los archivos del grupo carpeta+categoría (olvida resultados anteriores). */
+  const applyFolderFormat = (folderName: string, category: Category, value: string) => {
+    const affected = ready.filter((e) => folderOf(e) === folderName && categoryOf(e) === category)
+    if (!affected.length) return
+    playSound('toggle')
+    setFolderSelection((prev) => ({ ...prev, [folderCatKey(folderName, category)]: value }))
+    setSelection((prev) => {
+      const next = { ...prev }
+      for (const entry of affected) next[entry.id] = value
+      return next
+    })
+    for (const entry of affected) forgetResult(entry.id)
+  }
+
+  /** Descarga un ZIP solo con los resultados de una carpeta+categoría. */
+  const downloadFolderZip = async (folderName: string, folderEntries: FileEntry[]) => {
+    const key = folderName
+    const present = new Set(folderEntries.map((e) => e.id))
+    const packaged = Object.entries(resultsRef.current)
+      .filter(([id]) => present.has(id))
+      .flatMap(([, list]) => list)
+    if (!packaged.length || folderZipping[key]) return
+    setFolderZipping((prev) => ({ ...prev, [key]: true }))
+    setFolderZipPercent((prev) => ({ ...prev, [key]: 0 }))
+    setFolderZipError((prev) => { const next = { ...prev }; delete next[key]; return next })
+    try {
+      const delivery = await saveZip(packaged, undefined, (pct) =>
+        setFolderZipPercent((prev) => ({ ...prev, [key]: pct })))
+      if (delivery.kind === 'blob') {
+        const url = URL.createObjectURL(delivery.blob)
+        const anchor = document.createElement('a')
+        anchor.href = url
+        anchor.download = `${folderName}.zip`
+        anchor.click()
+        setTimeout(() => URL.revokeObjectURL(url), 0)
+      }
+      playSound('zip')
+    } catch (thrown) {
+      if (!(thrown instanceof DOMException && thrown.name === 'AbortError')) {
+        setFolderZipError((prev) => ({ ...prev, [key]: thrown instanceof Error ? thrown.message : 'No se pudo armar el ZIP.' }))
+      }
+    } finally {
+      setFolderZipping((prev) => ({ ...prev, [key]: false }))
+    }
+  }
+
+  /**
+   * Convierte UN archivo y refleja el desenlace en su fila. Es el único camino de conversión
+   * individual: lo usan el lote y el reintento, así que reintentar no puede divergir (FR-014).
+   */
+  const convertEntry = async (entry: FileEntry, signal: AbortSignal): Promise<Outcome> => {
+    const choice = chosen(entry)
+    if (!choice) return 'cancelled'
+    if (signal.aborted) { updateItem(entry.id, { state: 'cancelled' }); return 'cancelled' }
+    if (exceedsFileLimit(entry.file, choice.converter)) { failItem(entry.id, fileLimitMessage(entry.file, choice.converter)); return 'error' }
+    updateItem(entry.id, { state: 'converting', percent: 0 })
+    try {
+      const options = await optionsFor(choice, entry, optionsOf(entry))
+      const results = await convertWatched(choice, entry.file, (progress) => reportProgress(entry.id, progress.percent), options, signal)
+      registerResults(entry, results)
+      updateItem(entry.id, { state: 'completed', percent: 100, error: undefined, errorClass: undefined })
+      return 'done'
+    } catch (thrown) {
+      if (thrown instanceof DOMException && thrown.name === 'AbortError') { updateItem(entry.id, { state: 'cancelled' }); return 'cancelled' }
+      failItem(entry.id, thrown instanceof Error ? thrown.message : 'La conversión falló por un error inesperado.')
+      return 'error'
+    }
+  }
+
+  /**
+   * Reintenta un solo archivo (FR-014). Vuelve a leer el `File` original —los ArrayBuffer de
+   * entrada quedan detached al transferirse al worker— y no toca la cola ni los resultados de
+   * los demás. Sin sonido: el de fin de cola es por lote, nunca por archivo (FR-029).
+   */
+  const retryOne = async (entry: FileEntry) => {
+    if (running || retrying[entry.id]) return
+    setRetrying((current) => ({ ...current, [entry.id]: true }))
+    const controller = new AbortController()
+    try {
+      await convertEntry(entry, controller.signal)
+    } finally {
+      setRetrying((current) => { const next = { ...current }; delete next[entry.id]; return next })
+    }
+  }
+
+  /**
+   * Pausa y reanuda el lote (FR-018/FR-019). Pausar no interrumpe lo que ya está convirtiendo:
+   * sólo frena el despacho. Las filas que esperan turno pasan a "Pausado" para que el estado
+   * sea visible y no sólo un botón distinto.
+   */
+  const togglePause = () => {
+    const gate = gateRef.current
+    if (!gate) return
+    const goingToPause = !gate.paused
+    if (goingToPause) gate.pause()
+    else gate.resume()
+    setPaused(goingToPause)
+    playSound('toggle')
+    setItems((current) => {
+      const next = { ...current }
+      const from = goingToPause ? 'queued' : 'paused'
+      const to = goingToPause ? 'paused' : 'queued'
+      for (const [id, item] of Object.entries(next)) if (item.state === from) next[id] = { ...item, state: to }
+      return next
+    })
+  }
+
   const convertAll = async () => {
     if (!toConvert.length) return
     const controller = new AbortController()
     abortRef.current = controller
+    const gate = createPauseGate()
+    gateRef.current = gate
+    setPaused(false)
     setRunning(true)
     setAnnouncement(null)
+    setSummary(null)
     setZipError(undefined)
     // Preservar lo ya convertido: solo se limpian y encolan los pendientes.
     setDownloads((current) => {
@@ -212,6 +461,7 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
     // Contadores del lote para el sonido y el anuncio consolidados (FR-029c, FR-043)
     let doneCount = 0
     let errorCount = 0
+    let cancelledCount = 0
 
     // Todo el cuerpo va en try/finally: pase lo que pase, el lote deja de estar "corriendo".
     // Antes `setRunning(false)` estaba en el camino feliz y un fallo posterior dejaba la UI
@@ -233,48 +483,56 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
 
     for (const { choice, entries: grouped } of groups.values()) {
       const oversized = grouped.find((entry) => exceedsFileLimit(entry.file, choice.converter))
-      if (oversized) { updateItem(oversized.id, { state: 'error', error: fileLimitMessage(oversized.file, choice.converter) }); errorCount += 1; continue }
+      if (oversized) { failItem(oversized.id, fileLimitMessage(oversized.file, choice.converter)); errorCount += 1; continue }
       grouped.forEach((entry) => updateItem(entry.id, { state: 'converting', percent: 0 }))
       try {
         const options = await optionsFor(choice, grouped[0], optionsOf(grouped[0]))
-        const results = await choice.converter.convertMany!(grouped.map((entry) => entry.file), (progress) => grouped.forEach((entry) => updateItem(entry.id, { percent: progress.percent })), options, controller.signal)
+        const results = await choice.converter.convertMany!(grouped.map((entry) => entry.file), (progress) => grouped.forEach((entry) => reportProgress(entry.id, progress.percent)), options, controller.signal)
         registerResults(grouped[0], results)
-        grouped.forEach((entry) => updateItem(entry.id, { state: 'completed', percent: 100 }))
+        grouped.forEach((entry) => updateItem(entry.id, { state: 'completed', percent: 100, error: undefined, errorClass: undefined }))
         doneCount += grouped.length
       } catch (thrown) {
         const cancelled = thrown instanceof DOMException && thrown.name === 'AbortError'
-        grouped.forEach((entry) => updateItem(entry.id, { state: cancelled ? 'cancelled' : 'error', error: thrown instanceof Error ? thrown.message : 'Falló la conversión conjunta.' }))
-        if (!cancelled) errorCount += grouped.length
+        const message = thrown instanceof Error ? thrown.message : 'Falló la conversión conjunta.'
+        grouped.forEach((entry) => { if (cancelled) updateItem(entry.id, { state: 'cancelled' }); else failItem(entry.id, message) })
+        if (cancelled) cancelledCount += grouped.length
+        else errorCount += grouped.length
       }
     }
 
-    const concurrency = singles.reduce((lowest, entry) => Math.min(lowest, concurrencyForConverter(chosen(entry)!.converter)), 2)
-    await runWithConcurrency(singles.map((entry) => async () => {
-      const choice = chosen(entry)!
-      if (controller.signal.aborted) { updateItem(entry.id, { state: 'cancelled' }); return }
-      if (exceedsFileLimit(entry.file, choice.converter)) { updateItem(entry.id, { state: 'error', error: fileLimitMessage(entry.file, choice.converter) }); errorCount += 1; return }
-      updateItem(entry.id, { state: 'converting', percent: 0 })
-      try {
-        const options = await optionsFor(choice, entry, optionsOf(entry))
-        const results = await choice.converter.convert(entry.file, (progress) => updateItem(entry.id, { percent: progress.percent }), options, controller.signal)
-        registerResults(entry, results)
-        updateItem(entry.id, { state: 'completed', percent: 100 })
-        doneCount += 1
-      } catch (thrown) {
-        if (thrown instanceof DOMException && thrown.name === 'AbortError') updateItem(entry.id, { state: 'cancelled' })
-        else { updateItem(entry.id, { state: 'error', error: thrown instanceof Error ? thrown.message : 'La conversión falló por un error inesperado.' }); errorCount += 1 }
+    // Dos grupos con su propio tope (FR-017): audio/video de a 1, el resto de a 2. Un solo MP3
+    // ya no baja el lote entero a concurrencia 1.
+    const outcomes = await runPartitioned(singles.map((entry) => ({
+      limit: concurrencyForConverter(chosen(entry)!.converter),
+      run: () => convertEntry(entry, controller.signal),
+    })), controller.signal, gate)
+
+    outcomes.forEach((outcome, index) => {
+      if (outcome.status === 'fulfilled') {
+        if (outcome.value === 'done') doneCount += 1
+        else if (outcome.value === 'error') errorCount += 1
+        else cancelledCount += 1
+        return
       }
-    }), singles.length ? concurrency : 2, controller.signal)
+      // Rechazado sin haber corrido: se canceló el lote antes de que le tocara el turno.
+      // Sin esto la fila se quedaba en "Pendiente" para siempre.
+      updateItem(singles[index].id, { state: 'cancelled' })
+      cancelledCount += 1
+    })
     } finally {
       setRunning(false)
+      setPaused(false)
+      gateRef.current = null
     }
 
     // Fin de cola: UN solo sonido para todo el lote, nunca por archivo (FR-029).
     // Cancelar todo no es un logro: sin terminados ni errores no suena nada.
     if (errorCount > 0) playSound('queue-done-errors')
     else if (doneCount > 0) playSound('queue-done-ok')
-    // Anuncio consolidado por lote para lectores de pantalla (FR-043)
-    if (doneCount > 0 || errorCount > 0) setAnnouncement({ done: doneCount, failed: errorCount })
+    // Anuncio consolidado por lote para lectores de pantalla (FR-043) con el resumen
+    // completo del lote: listos, con error y cancelados (006 FR-016).
+    if (doneCount > 0 || errorCount > 0 || cancelledCount > 0) setAnnouncement({ done: doneCount, failed: errorCount, cancelled: cancelledCount })
+    setSummary({ done: doneCount, failed: errorCount, cancelled: cancelledCount })
   }
 
   const tracked = convertible.map((entry) => items[entry.id]).filter((item): item is BatchItem => Boolean(item))
@@ -289,150 +547,152 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
   const folderCount = new Set(ready.map((entry) => entry.relativePath?.split('/')[0]).filter(Boolean)).size
   const countLabel = `${ready.length} ${ready.length === 1 ? 'archivo' : 'archivos'}${folderCount ? ` · ${folderCount} ${folderCount === 1 ? 'carpeta' : 'carpetas'}` : ''}`
 
+  // Archivos sueltos (sin carpeta) agrupados por categoría — comportamiento original
+  const loose = looseEntries(ready)
   const groupsByCategory = CATEGORY_ORDER
-    .map((category) => ({ category, meta: CATEGORY_META[category], list: ready.filter((entry) => categoryOf(entry) === category) }))
+    .map((category) => ({ category, meta: CATEGORY_META[category], list: loose.filter((entry) => categoryOf(entry) === category) }))
     .filter((group) => group.list.length > 0)
 
-  const renderRow = (entry: FileEntry) => {
-    const item = items[entry.id]
-    const choice = chosen(entry)
-    const choices = choicesFor(entry)
-    const many = new Set(choices.map((c) => c.target)).size !== choices.length
-    const options = optionsOf(entry)
-    const state = item?.state
-    const rowDownloads = downloads[entry.id] ?? []
-    const meta = CATEGORY_META[categoryOf(entry)]
-    const showImageOptions = choice?.converter.id === 'image-convert'
-    const showMp4Options = choice?.converter.id === 'mp3-to-mp4'
+  // Archivos con carpeta — agrupados por carpeta y luego por categoría
+  const folderGroups = buildFolderGroups(ready)
+
+  // Los callbacks de la fila viajan en un objeto que NUNCA cambia de identidad: si cambiara,
+  // `React.memo` en QueueRow no serviría de nada. Las versiones frescas se leen del ref, que
+  // se actualiza en cada render.
+  const latestRef = useRef({ retryOne, forgetResult, patchOptions, onRemove })
+  latestRef.current = { retryOne, forgetResult, patchOptions, onRemove }
+
+  const rowActions = useMemo<QueueRowActions>(() => ({
+    select: (entryId, value) => {
+      if (value) playSound('toggle')
+      setSelection((current) => ({ ...current, [entryId]: value }))
+      // Cambiar el destino de un archivo ya convertido lo vuelve pendiente de nuevo.
+      latestRef.current.forgetResult(entryId)
+    },
+    patchOptions: (entryId, patch) => latestRef.current.patchOptions(entryId, patch),
+    markDownloaded: (entryId) => setDownloadedIds((current) => ({ ...current, [entryId]: true })),
+    retry: (entry) => { void latestRef.current.retryOne(entry) },
+    remove: (entryId) => latestRef.current.onRemove?.(entryId),
+  }), [])
+
+  const renderRow = (entry: FileEntry) => (
+    <QueueRow
+      key={entry.id}
+      entry={entry}
+      icon={CATEGORY_META[categoryOf(entry)].icon}
+      item={items[entry.id]}
+      choices={choicesOf(entry)}
+      selectedKey={selection[entry.id] ?? ''}
+      options={optionsOf(entry)}
+      downloads={downloads[entry.id] ?? EMPTY_DOWNLOADS}
+      downloaded={downloadedIds[entry.id] ?? false}
+      running={running}
+      retrying={retrying[entry.id] ?? false}
+      canRemove={Boolean(onRemove)}
+      actions={rowActions}
+    />
+  )
+
+  /**
+   * Renderiza un grupo de categoría (imagen/doc/video/audio) dentro de una carpeta.
+   * Incluye un selector de formato que aplica a todos los archivos del grupo.
+   */
+  const renderFolderCategoryGroup = (folderName: string, category: Category, list: FileEntry[]) => {
+    const meta = CATEGORY_META[category]
+    const key = folderCatKey(folderName, category)
+    const commonChoices: readonly CommonChoice[] = getCommonTargets(list)
+    const currentValue = folderSelection[key] ?? ''
+    const limitations = [...new Set(list.map((entry) => chosen(entry)?.converter.limitation).filter(Boolean))]
+    const manyConverters = new Set(commonChoices.map((c) => c.target)).size !== commonChoices.length
 
     return (
-      <div className="ct-row" key={entry.id} data-state={state ?? 'pending'}>
-        {state === 'completed' && <span className="ct-row-sweep" aria-hidden="true" />}
-        <span className="ct-row-glyph" aria-hidden="true">
-          <Icon name={meta.icon} size={17} />
-          {state === 'completed' && <span className="ct-row-glow" />}
-        </span>
-
-        <div className="ct-row-main">
-          <div className="ct-row-name">{entry.name}</div>
-          <div className="ct-row-sub">
-            {entry.detectedType.extension.toUpperCase()}
-            {choice ? ` → ${choice.target.toUpperCase()}` : ''} · {fmtSize(entry.sizeBytes)}
+      <div className="ct-group ct-group-folder-category" key={`${folderName}::${category}`}>
+        <div className="ct-group-head">
+          <div className="ct-group-id">
+            <span className="ct-group-glyph" aria-hidden="true"><Icon name={meta.icon} size={16} /></span>
+            <div>
+              <div className="ct-group-name">
+                {meta.name}
+                {limitations.length > 0 && (
+                  <span className="ct-badge-fidelity" title={limitations.join(' ')}>
+                    <Icon name="info" size={12} />
+                    Fidelidad parcial
+                  </span>
+                )}
+              </div>
+              <div className="ct-group-count">{list.length} {list.length === 1 ? 'archivo' : 'archivos'}</div>
+            </div>
           </div>
+
+          {/* Selector de formato para toda la categoría dentro de la carpeta */}
+          {commonChoices.length > 0 && (
+            <span className="ct-select-wrap ct-folder-format-select">
+              <select
+                className="ct-select"
+                aria-label={`Formato para todas las ${meta.name.toLowerCase()} de ${folderName}`}
+                value={currentValue}
+                onChange={(event) => applyFolderFormat(folderName, category, event.target.value)}
+                disabled={running}
+              >
+                <option value="">Aplicar formato a todas…</option>
+                {commonChoices.map((c) => {
+                  const ck = choiceKey(c)
+                  return <option key={ck} value={ck}>{manyConverters ? `${c.target.toUpperCase()} — ${c.converter.label}` : c.target.toUpperCase()}</option>
+                })}
+              </select>
+              <Icon name="chev" size={14} className="ct-select-chev" />
+            </span>
+          )}
+          {commonChoices.length === 0 && (
+            <span role="note" className="ct-note"><Icon name="info" size={13} />Sin formato común</span>
+          )}
         </div>
 
-        <div className="ct-row-side">
-          {/* Selector por archivo (FR-023b); el nombre accesible es el archivo */}
-          <span className="ct-select-wrap">
-            <select
-              className="ct-select"
-              aria-label={entry.name}
-              value={selection[entry.id] ?? ''}
-              onChange={(event) => {
-                if (event.target.value) playSound('toggle')
-                setSelection((current) => ({ ...current, [entry.id]: event.target.value }))
-                // Cambiar el destino de un archivo ya convertido lo vuelve pendiente de nuevo.
-                forgetResult(entry.id)
-              }}
-              disabled={running}
-            >
-              <option value="">Elegí un formato destino</option>
-              {choices.map((c) => <option key={choiceKey(c)} value={choiceKey(c)}>{choiceLabel(c, many)}</option>)}
-            </select>
-            <Icon name="chev" size={14} className="ct-select-chev" />
-          </span>
+        {limitations.map((limitation) => (
+          <div className="ct-note-block" key={limitation}>
+            <p role="note" className="ct-note"><Icon name="info" size={14} />{limitation}</p>
+          </div>
+        ))}
+        {list.map(renderRow)}
+      </div>
+    )
+  }
 
-          {!choice && !state && <span role="note" className="ct-note">sin formato destino: no se convertirá</span>}
+  /** Renderiza una carpeta completa: nombre + ZIP inline + sub-grupos por categoría. */
+  const renderFolderGroup = (group: FolderGroup) => {
+    const allFolderEntries = group.byCategory.flatMap((g) => g.list)
+    const folderDoneTotal = allFolderEntries.filter((e) => items[e.id]?.state === 'completed').length
+    const isZipping = folderZipping[group.folderName] ?? false
+    const zipPct = folderZipPercent[group.folderName] ?? 0
+    const zipErr = folderZipError[group.folderName]
 
-          {(state === undefined || state === 'queued') && choice && (
-            <span className="ct-pill ct-pill-pending"><span className="ct-pill-dot" aria-hidden="true" />Pendiente</span>
-          )}
+    return (
+      <div className="ct-folder-group" key={group.folderName}>
+        <div className="ct-folder-head">
+          <span className="ct-folder-icon" aria-hidden="true"><Icon name="folder" size={18} /></span>
+          <span className="ct-folder-name">{group.folderName}</span>
+          <span className="ct-folder-count">{allFolderEntries.length} {allFolderEntries.length === 1 ? 'archivo' : 'archivos'}</span>
 
-          {state === 'converting' && (
-            <>
-              <span className="ct-progress" role="progressbar" aria-label={`Progreso de ${entry.name}`} aria-valuenow={item?.percent ?? 0} aria-valuemin={0} aria-valuemax={100}>
-                <span className="ct-progress-fill" style={{ width: `${item?.percent ?? 0}%` }} />
-              </span>
-              <span className="ct-progress-pct">{Math.round(item?.percent ?? 0)}%</span>
-            </>
-          )}
-
-          {state === 'completed' && (
-            <>
-              <span className="ct-pill ct-pill-done">
-                <svg viewBox="0 0 24 24" width={13} height={13} className="ct-icn ct-check-draw" aria-hidden="true"><use href="#i-check" /></svg>
-                {downloadedIds[entry.id] ? 'Descargado' : 'Listo'}
-              </span>
-              {rowDownloads.map((download) => (
-                <a
-                  key={download.url}
-                  className="ct-btn ct-btn-dark ct-btn-sm"
-                  href={download.url}
-                  download={download.name}
-                  aria-label={`Descargar ${download.name}`}
-                  onClick={() => setDownloadedIds((current) => ({ ...current, [entry.id]: true }))}
-                >
-                  <Icon name="download" size={14} />
-                  Descargar
-                </a>
-              ))}
-            </>
-          )}
-
-          {state === 'error' && (
-            <span className="ct-pill ct-pill-error"><span className="ct-pill-dot" aria-hidden="true" />Error</span>
-          )}
-
-          {state === 'cancelled' && (
-            <span className="ct-pill ct-pill-cancelled"><span className="ct-pill-dot" aria-hidden="true" />Cancelado</span>
-          )}
-
-          {showImageOptions && !running && (
+          {folderDoneTotal > 0 && !running && (
             <button
               type="button"
-              className="ct-options-toggle"
-              aria-expanded={options.optionsOpen}
-              onClick={() => patchOptions(entry.id, { optionsOpen: !options.optionsOpen })}
+              className="ct-btn ct-btn-dark ct-btn-sm ct-folder-zip-btn"
+              onClick={() => { void downloadFolderZip(group.folderName, allFolderEntries) }}
+              disabled={isZipping}
+              aria-label={`Descargar ${group.folderName} como ZIP`}
             >
-              Opciones de imagen
-              <Icon name="chev" size={12} />
-            </button>
-          )}
-
-          {onRemove && !running && state !== 'converting' && (
-            <button type="button" className="ct-btn-icon" title="Quitar" aria-label={`Quitar ${entry.name}`} onClick={() => onRemove(entry.id)}>
-              <Icon name="x" size={14} />
+              <Icon name="zip" size={14} />
+              {isZipping ? `${zipPct}%` : 'Descargar ZIP'}
             </button>
           )}
         </div>
 
-        {/* Causa concreta del error, visible y accesible (FR-019, FR-043b) */}
-        {state === 'error' && item?.error && <p role="alert" className="ct-row-error-cause">{item.error}</p>}
-
-        {showImageOptions && options.optionsOpen && (
-          <div className="ct-row-options">
-            <label>Calidad {options.quality}%
-              <input aria-label="Calidad" type="range" min="1" max="100" value={options.quality} onChange={(event) => patchOptions(entry.id, { quality: Number(event.target.value) })} />
-            </label>
-            <label>Ancho máximo (px)
-              <input aria-label="Ancho máximo" type="number" min="1" value={options.maxWidth ?? ''} onChange={(event) => patchOptions(entry.id, { maxWidth: event.target.value ? Number(event.target.value) : undefined })} />
-            </label>
-            {choice?.target === 'jpg' && <span className="ct-note">La transparencia se aplana sobre fondo blanco al convertir a JPG.</span>}
-          </div>
+        {zipErr && (
+          <p role="alert" className="ct-row-error-cause">{zipErr} Podés descargar los archivos de a uno.</p>
         )}
 
-        {/* MP3→MP4: waveform automático por defecto, portada opcional (FR-028/FR-028b) */}
-        {showMp4Options && (
-          <div className="ct-row-options">
-            <label><input type="radio" name={`visual-${entry.id}`} checked={options.visual === 'waveform'} onChange={() => patchOptions(entry.id, { visual: 'waveform' })} />Generar waveform</label>
-            <label><input type="radio" name={`visual-${entry.id}`} checked={options.visual === 'cover'} onChange={() => patchOptions(entry.id, { visual: 'cover' })} />Usar portada</label>
-            {options.visual === 'cover' && (
-              <label>Imagen de portada
-                <input aria-label="Imagen de portada" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => patchOptions(entry.id, { cover: event.target.files?.[0] })} />
-              </label>
-            )}
-            <span className="ct-note">{options.visual === 'waveform' ? 'Se usará un waveform generado automáticamente.' : 'Se usará tu imagen como fondo del video.'}</span>
-          </div>
+        {group.byCategory.map((catGroup) =>
+          renderFolderCategoryGroup(group.folderName, catGroup.category, catGroup.list)
         )}
       </div>
     )
@@ -463,11 +723,28 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
                   <span className="ct-progress-fill" style={{ width: `${globalPercent ?? 0}%` }} />
                 </span>
                 <span className="ct-progress-pct">{globalPercent ?? 0}%</span>
+                <button
+                  type="button"
+                  className="ct-btn ct-btn-outline"
+                  aria-label={paused ? 'Reanudar lote' : 'Pausar lote'}
+                  onClick={togglePause}
+                >
+                  <Icon name={paused ? 'play' : 'pause'} size={15} />
+                  {paused ? 'Reanudar' : 'Pausar'}
+                </button>
                 <button type="button" className="ct-btn ct-btn-outline" onClick={() => abortRef.current?.abort()}>Cancelar lote</button>
               </>
             )}
           </div>
         </div>
+      )}
+
+      {/* Resumen del lote terminado: listos / con error / cancelados (FR-016) */}
+      {summary && !running && (
+        <p className="ct-note ct-batch-summary">
+          <Icon name="info" size={14} />
+          Lote terminado: {announcementText(summary)}.
+        </p>
       )}
 
       {pending.length > 0 && ready.length > 0 && (
@@ -477,6 +754,10 @@ export function FileQueue({ entries, onRemove, onClear, onBatchActivity, skipped
         </p>
       )}
 
+      {/* Carpetas: cada carpeta con sus subcategorías y selector de formato masivo */}
+      {folderGroups.map(renderFolderGroup)}
+
+      {/* Archivos sueltos (sin carpeta): comportamiento original por categoría */}
       {groupsByCategory.map(({ category, meta, list }) => {
         const limitations = [...new Set(list.map((entry) => chosen(entry)?.converter.limitation).filter(Boolean))]
         return (

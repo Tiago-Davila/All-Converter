@@ -1,186 +1,118 @@
 # Estado de la implementación — 006-lotes-grandes
 
-**Última actualización**: 2026-08-11 | **Rama**: `006-lotes-grandes` | **Sin commitear**
+**Última actualización**: 2026-08-12 | **Rama**: `006-lotes-grandes` | **Todo commiteado**
 
-> ⚠️ **Lo más importante que tenés que saber antes de seguir**: el código **compila**
-> (`npx tsc -b` pasa limpio) pero **la suite de tests NUNCA se ejecutó**. Se interrumpió justo
-> antes de correr `npx vitest run`. Todo lo marcado como "hecho" abajo está escrito y tipado,
-> **no verificado en ejecución**. El primer paso al retomar es correr los tests y esperar
-> roturas.
-
----
-
-## Cómo retomar (en este orden)
-
-```bash
-cd all-converter
-npx vitest run          # PRIMERO ESTO. Hay roturas conocidas esperadas, ver abajo.
-```
-
-### Roturas que doy por seguras
-
-1. **`tests/lib/zip.test.ts`** — usa la API vieja: `createZip([{ name, buffer }])` con
-   `ArrayBuffer` y espera un `ArrayBuffer` de vuelta. Ahora `ZipEntry` lleva `blob: Blob` y
-   `createZip` devuelve `Blob`. Hay que reescribir el test (es la tarea T012/T013).
-2. **`tests/lib/directory-input.test.ts`** — tiene el literal `'Límite de 10'` en las
-   aserciones y el tope ahora es 200 (tarea T009).
-3. **`tests/components/batch-flow.test.tsx`** — el ZIP ya no se arma al terminar el lote sino
-   al hacer clic en "Descargar ZIP", y el elemento pasó de `<a href>` a `<button>`. Cualquier
-   aserción sobre el link del ZIP va a fallar. Es un cambio de diseño deliberado, ver abajo.
-4. Posible: tests que dependan del orden de detección en `intakeFiles`, que ahora es
-   concurrente (aunque el orden de salida se preserva por índice).
+> **La feature está completa y verificada.** `npm run ci` pasa entero: lint, 576 tests
+> unitarios (84.9% de líneas), build, presupuesto de bundle, workers, offline y 19 e2e.
+> Lo único que queda es la pasada **manual** de T045 (a11y en escala de grises y recorrido por
+> teclado), que necesita ojos humanos.
 
 ---
 
-## Decisión de diseño que se tomó durante la implementación
+## Estado por fase
 
-**El ZIP se arma al hacer clic, no al terminar el lote.**
-
-No estaba en el plan aprobado; salió de un detalle que apareció al implementar:
-`showSaveFilePicker()` **exige activación transitoria del usuario**, así que no se puede
-llamar automáticamente al final del lote. Armarlo on-demand además:
-
-- hace trivial FR-010 (no se rearma si nadie lo pide);
-- elimina de raíz el defecto de la UI trabada (ya no hay empaquetado en el camino de
-  `convertAll`);
-- no gasta CPU ni memoria empaquetando algo que el usuario quizá no descargue.
-
-**Consecuencia visible**: la barra de "Descargar todo" ahora aparece apenas hay resultados y su
-control es un `<button>` con estado "Empaquetando… N%", en vez de un `<a href>` con un blob ya
-listo. Los tests que miren el link hay que adaptarlos.
-
----
-
-## Lo que está hecho (escrito y tipado, SIN correr tests)
-
-### Fase 2 — Foundational
-
-| Tarea | Estado | Archivo |
-|---|---|---|
-| T003 `resultsRef` a `Blob` | ✅ escrito | `src/components/FileQueue.tsx` |
-| T004 `ZipEntry`/`ZipInput` con `Blob` | ✅ escrito | `src/lib/zip.ts`, `src/workers/types.ts` |
-| T005 `try/finally` en `convertAll` | ✅ escrito | `src/components/FileQueue.tsx` |
-| T006 test del defecto de UI trabada | ❌ **falta** | `tests/components/batch-flow.test.tsx` |
-| T007 filtro O(n²) → `Set` | ✅ escrito | `src/components/FileQueue.tsx` (`packagedEntries`) |
-| T008 mover `error-class.ts` a `lib/` | ❌ **falta** | — |
-
-### Fase 3 — US1
-
-| Tarea | Estado | Archivo |
-|---|---|---|
-| T009–T013 tests de US1 | ❌ **faltan todos** | `tests/lib/*`, `tests/components/*` |
-| T014 escritor ZIP STORE incremental | ✅ escrito | `src/workers/zip-operations.ts` |
-| T015 canal de chunks + `onChunk` | ✅ escrito | `src/workers/types.ts`, `client.ts` |
-| T016 emitir chunks | ✅ escrito | `src/workers/zip.worker.ts` |
-| T017 sink `showSaveFilePicker` + fallback | ✅ escrito | `src/lib/zip.ts` (`saveZip`) |
-| T018 no rearmar el ZIP | ✅ por diseño | on-demand, ver arriba |
-| T019 `MAX_BATCH_FILES = 200` | ✅ escrito | `src/lib/directory-input.ts` |
-| T020 cupo antes de detectar | ✅ escrito | `src/lib/directory-input.ts` |
-| T021 detección concurrente | ✅ escrito | `src/lib/directory-input.ts` |
-| T022 techo de exploración | ✅ escrito | `src/lib/directory-input.ts` |
-| T023 serializar aportes | ✅ escrito | `src/App.tsx` (`intakeChain`) |
-| T024 fila resumen de rechazos | ✅ escrito | `src/components/FileQueue.tsx` |
-| T025 particionar concurrencia | ❌ **falta** | `src/lib/job-scheduler.ts` |
-
-### Fases 4, 5 y 6 — sin empezar
-
-US2 (watchdog, reintento, resumen), US3 (pausa/reanudación) y Polish (memoización,
-throttling, e2e, README) están **sin tocar**. `tasks.md` tiene el detalle T026–T046.
-
----
-
-## Detalle de lo implementado, para poder revisarlo
-
-### `src/workers/zip-operations.ts` — reescrito entero
-
-Escritor ZIP STORE incremental. `streamZip()` es un `AsyncGenerator<Uint8Array>` que lee **un
-blob por vez** con `blob.arrayBuffer()` y suelta los bytes antes del siguiente. Incluye tabla
-CRC32 propia, `ByteWriter` little-endian, y rechazo con mensaje si la suma supera 4 GB (sin
-ZIP64). `executeZip()` se conserva para juntar todo en un `ArrayBuffer`.
-
-**Está validado por spike fuera del repo** (52 entradas, round-trip contra `JSZip.loadAsync`,
-bytes OK, `ñandú-café.txt` OK, subcarpetas OK) pero **no por un test del repo**.
-
-### `src/lib/directory-input.ts` — reescrito
-
-- `MAX_BATCH_FILES = 200`, `MAX_SCAN_FILES = 5000`.
-- `readDroppedItems` ahora devuelve `{ files, skipped }` en vez de un array. **Cambio de API**:
-  los dos `Dropzone` ya están adaptados.
-- `intakeFiles` detecta **por olas** del tamaño del cupo libre. Es más sutil de lo que parece:
-  un tipo no soportado no consume cuota, así que si una ola deja lugar, la siguiente lo
-  aprovecha. Eso preserva la semántica original (donde el chequeo de tipo iba antes que el de
-  cupo) sin leer bytes de archivos que no podrían entrar ni en el mejor caso.
-
-  > Ojo: una primera versión de esto tenía un bug —reservaba cupo y lo "devolvía" después, lo
-  > que hacía que un archivo válido tardío quedara afuera injustamente. Se corrigió con el
-  > esquema de olas. Si tocás esta función, el test de T010 es el que protege esa semántica.
-
-### `src/lib/zip.ts` — reescrito
-
-`saveZip(entries, signal, onProgress)` devuelve `{ kind: 'saved' }` (se escribió a disco con
-File System Access) o `{ kind: 'blob', blob }` (fallback Firefox/Safari, el llamador dispara la
-descarga). Los chunks se encadenan con una promesa para garantizar orden de escritura.
-`createZip` se conserva devolviendo `Blob`, para tests.
-
-### `src/components/FileQueue.tsx`
-
-`registerResults` crea **un solo `Blob`** que alimenta a la vez la descarga individual y el
-ZIP. `convertAll` entero en `try/finally`. `downloadAll()` nuevo. Barra de ZIP con estado de
-empaquetado y fila de error propia. Fila resumen de rechazos por cupo/exploración.
-
----
-
-## Riesgos y cosas a mirar con desconfianza
-
-1. **Nada está verificado en ejecución.** Es el riesgo principal.
-2. **El escritor ZIP es código de formato binario.** El spike da confianza pero no reemplaza al
-   test de round-trip con ≥200 entradas (T012). Es la primera prueba que escribiría.
-3. **`intakeFiles` por olas** — la lógica de cupo es la parte más sutil del diff.
-4. **La transferencia del chunk** en `zip.worker.ts` usa `[chunk.buffer]` como transferable. Si
-   `streamZip` alguna vez devolviera vistas sobre un buffer compartido, transferirlo rompería
-   las siguientes. Hoy cada chunk tiene su propio buffer, pero es una precondición implícita
-   que conviene no romper.
-5. **`ct-zipbar-link` ahora es un `<button>`**, no un `<a>`. Revisar que el CSS de
-   `src/index.css` no asuma `<a>` (color de link, subrayado).
-6. **Sin commits.** Todo el trabajo está en el working tree de la rama `006-lotes-grandes`.
-   El proyecto pide un commit por tarea; conviene commitear por tramo al validar cada uno.
-
----
-
-## Archivos tocados
-
-```
-M all-converter/.specify/feature.json          apunta a specs/006-lotes-grandes
-M all-converter/package-lock.json              npm install (no se agregaron dependencias)
-M all-converter/src/App.tsx
-M all-converter/src/components/Dropzone.tsx    (código muerto, adaptado para que compile)
-M all-converter/src/components/FileQueue.tsx   ← el grueso del cambio
-M all-converter/src/lib/directory-input.ts     ← reescrito
-M all-converter/src/lib/zip.ts                 ← reescrito
-M all-converter/src/ui/components/Dropzone.tsx
-M all-converter/src/workers/client.ts
-M all-converter/src/workers/types.ts
-M all-converter/src/workers/validation.ts
-M all-converter/src/workers/worker-utils.ts
-M all-converter/src/workers/zip-operations.ts  ← reescrito
-M all-converter/src/workers/zip.worker.ts      ← reescrito
-? all-converter/specs/006-lotes-grandes/       spec, plan, research, contracts, tasks, este archivo
-```
-
-**No se agregó ninguna dependencia.** El `package-lock.json` cambió sólo por correr
-`npm install` (`node_modules` no estaba instalado).
-
----
-
-## Documentos de la feature
-
-| Archivo | Qué tiene |
+| Fase | Estado |
 |---|---|
-| `spec.md` | 23 requisitos, 10 criterios de éxito, 3 historias. La evidencia del estado actual con archivo y línea |
-| `research.md` | D1–D8. **D1 es el importante**: la medición que descartó JSZip |
-| `plan.md` | Constitution Check y Complexity Tracking |
-| `data-model.md` | Entidades y transiciones de estado |
-| `contracts/` | `zip-stream.md`, `job-scheduler.md`, `reliability.md` |
-| `tasks.md` | T001–T046, con dependencias y conflictos de archivo |
-| `quickstart.md` | Cómo validar cada historia |
-| `ESTADO.md` | Este archivo |
+| 1 · Setup (T001–T002) | ✅ |
+| 2 · Foundational (T003–T008) | ✅ |
+| 3 · US1 — carpeta grande (T009–T025) | ✅ |
+| 4 · US2 — un archivo roto no arruina el lote (T026–T033) | ✅ |
+| 5 · US3 — pausar y reanudar (T034–T039) | ✅ |
+| 6 · Polish (T040–T046) | ✅ salvo la parte manual de T045 |
+
+---
+
+## Lo que se cerró en esta sesión
+
+Al retomar, la suite estaba en rojo (11 tests en 4 archivos): parte por deriva de API esperada
+y parte por dos regresiones que habían entrado con la agrupación por carpeta y el waveform por
+default.
+
+1. **Suite en verde** — mock del registry con `getCommonTargets`, aserción del ZIP como
+   `<button>`, y la limitación de MP3→MP4 con el orden nuevo (waveform primero).
+2. **Tests de US1** (T009–T013) — cupo de 200, **cero lecturas de magic bytes fuera de cupo**,
+   techo de exploración, round-trip de 200 entradas y una lectura de blob por vez.
+3. **T008** — `error-class` pasó a `src/lib/` con reexport en `ui/`.
+4. **T025** — `runPartitioned`: audio/video de a 1 y el resto de a 2, en paralelo. Se terminó
+   el mínimo global que bajaba el lote entero a 1 por un solo MP3.
+5. **US2 completa** — watchdog por archivo (`convertWatched`), clasificación de errores en la
+   fila, "Reintentar" sólo en transitorios, resumen de listos / con error / cancelados.
+6. **US3 completa** — `PauseGate` en el scheduler + controles Pausar/Reanudar y estado
+   `paused` en la fila, con ícono y texto propios.
+7. **Polish** — `QueueRow` memoizada, progreso throttleado a un cuadro, e2e de 60 archivos,
+   READMEs, presupuesto de bundle y `npm run ci` en verde.
+
+---
+
+## El defecto que encontró el e2e
+
+El escritor ZIP producía **archivos corruptos en el navegador** y no en los tests.
+
+`streamZip` calculaba `offset += header.length + bytes.length` **después** de emitir los
+trozos. El worker transfiere el buffer de cada trozo (`postMessage(..., [chunk.buffer])`), lo
+que deja la vista en `length` 0: el directorio central salía con tamaños y offsets mentirosos.
+El ZIP abría "bien" —60 cabeceras locales, 60 centrales, EOCD— pero ningún lector podía
+extraer nada.
+
+No lo veía ningún test unitario porque el camino de tests no transfiere nada. Ahora sí:
+`tests/lib/zip.test.ts` reproduce la transferencia con
+`structuredClone(chunk.buffer, { transfer: [chunk.buffer] })`. El arreglo es medir los tamaños
+antes de emitir.
+
+Moraleja para el que siga: **los trozos son de un solo uso**. Nada puede mirarlos después del
+`yield`.
+
+---
+
+## Medición de memoria (SC-009)
+
+Con 200 imágenes reales, medido por CDP (`Runtime.getHeapUsage`) en Chromium:
+
+| Momento | Heap |
+|---|---|
+| Inicio | 1,6 MB |
+| Cola con 200 archivos cargados | 7,4 MB |
+| 200 convertidos | 16,1 MB |
+| ZIP de 200 entradas empaquetado y descargado | 20,2 MB |
+
+El heap no crece con el total de bytes producidos: los resultados viven como `Blob` y el ZIP se
+escribe leyendo un blob por vez. La medición usa imágenes chicas, así que prueba el
+comportamiento estructural; la comparación con archivos grandes sigue siendo la prueba manual
+del `quickstart.md`.
+
+---
+
+## Decisiones de diseño que conviene conocer
+
+1. **El ZIP se arma al hacer clic, no al terminar el lote.** `showSaveFilePicker()` exige
+   activación transitoria del usuario, así que no puede llamarse automáticamente al final del
+   lote. De paso no se empaqueta lo que nadie va a descargar (FR-010).
+2. **Sin JSZip para escribir.** Se midió que lee el blob entero al agregarlo (research.md D1).
+   El generador propio no agrega dependencias y lee de a un blob por vez.
+3. **El watchdog mide falta de avance, no duración.** 300 s por defecto, 900 s para
+   audio/video, y el plazo se reinicia con cada evento de progreso.
+4. **Reintentar sólo en transitorios.** Ofrecerlo en un fallo determinístico sería prometer un
+   resultado que no va a llegar (Principio XV).
+5. **La fila es un componente memoizado** (`src/components/QueueRow.tsx`) y sus callbacks
+   viajan en un objeto de identidad estable. Si alguien lo reemplaza por lambdas inline, la
+   memoización deja de servir en silencio.
+6. **La carpeta de 60 imágenes del e2e se genera**, no se versiona: `tests/helpers/large-folder.ts`
+   copia `tests/fixtures/sample.png`. Son imágenes reales y el repo no engorda.
+
+---
+
+## Trampa al correr los e2e a mano
+
+`npm run test:e2e` levanta `npm run preview`, que sirve `dist/` **sin rebuildear**. Con un
+`dist/` viejo los tests miden la versión anterior (pasa desapercibido: el lote se corta en 10 y
+parece un bug nuevo). `npm run ci` no tiene el problema porque buildea antes. Corriendo
+Playwright suelto, `npm run build` primero.
+
+---
+
+## Qué queda
+
+- **T045 manual**: escala de grises para confirmar que "Pausado" se distingue sin color,
+  recorrido por teclado de Pausar / Reanudar / Cancelar con foco visible, y un lote real con
+  archivos grandes (video) mirando el heap en DevTools.
+- Nada más: `tasks.md` está en 45/46 con esa única tarea parcial.

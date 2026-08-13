@@ -1,51 +1,32 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
-import type { DetectedFileType, FileEntry } from '../../src/converters/types'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { FileEntry } from '../../src/converters/types'
 import { FileQueue } from '../../src/components/FileQueue'
+import { WATCHDOG_MS } from '../../src/lib/job-scheduler'
+import { controlledJobs, converterCalls, queueEntry, resetBatchDoubles } from '../helpers/batch'
 
-const hoisted = vi.hoisted(() => ({ imageCalls: [] as string[] }))
-
-vi.mock('../../src/converters/registry', () => {
-  const image = {
-    id: 'fake-image', label: 'Convertir imagen', from: ['image'], to: 'jpg|webp', maxSizeMB: 50,
-    async convert(file: File, _onProgress: unknown, options: Record<string, unknown>) {
-      hoisted.imageCalls.push(file.name)
-      if (file.name === 'malo.png') throw new Error('El archivo parece estar dañado o incompleto.')
-      const target = String(options.target)
-      return [{ name: file.name.replace(/\.png$/, `.${target}`), mime: `image/${target}`, buffer: new TextEncoder().encode(target).buffer, sizeBytes: 3 }]
-    },
-  }
-  const sheet = {
-    id: 'fake-sheet', label: 'Convertir planilla', from: ['spreadsheet'], to: 'xlsx', maxSizeMB: 25,
-    async convert(file: File, _onProgress: unknown, options: Record<string, unknown>) {
-      const target = String(options.target)
-      return [{ name: file.name.replace(/\.csv$/, `.${target}`), mime: 'application/vnd.ms-excel', buffer: new TextEncoder().encode(target).buffer, sizeBytes: 3 }]
-    },
-  }
-  return {
-    converters: [image, sheet],
-    getAvailableConverters: (type: DetectedFileType) => (type.kind === 'image' ? [image] : [sheet]),
-    getConverterTargets: (converter: { to: string }) => converter.to.split('|'),
-  }
-})
+vi.mock('../../src/converters/registry', async () => (await import('../helpers/batch')).makeRegistryModule())
 
 URL.createObjectURL = vi.fn(() => 'blob:zip')
 URL.revokeObjectURL = vi.fn()
 
-function imageEntry(name: string): FileEntry {
-  return { id: name, file: new File(['x'], name), name, sizeBytes: 1, detectedType: { kind: 'image', mime: 'image/png', extension: 'png', detection: 'magic-bytes' }, state: 'ready', relativePath: `fotos/${name}` }
-}
+beforeEach(() => { resetBatchDoubles() })
 
-function sheetEntry(name: string): FileEntry {
-  return { id: name, file: new File(['x'], name), name, sizeBytes: 1, detectedType: { kind: 'spreadsheet', mime: 'text/csv', extension: 'csv', detection: 'magic-bytes' }, state: 'ready', relativePath: `datos/${name}` }
-}
+const imageEntry = (name: string): FileEntry => queueEntry(name, 'image', `fotos/${name}`)
+const sheetEntry = (name: string): FileEntry => queueEntry(name, 'spreadsheet', `datos/${name}`)
 
 /** Elige el destino de una fila por el nombre del archivo (FR-023b). */
 function chooseTarget(fileName: string, optionLabel: string): void {
   const select = screen.getByLabelText(fileName, { selector: 'select' })
   const option = Array.from(select.querySelectorAll('option')).find((candidate) => candidate.textContent === optionLabel)
   fireEvent.change(select, { target: { value: option!.value } })
+}
+
+/** Espera a que el conversor doble tenga colgado el archivo pedido. */
+async function waitForControlled(name: string) {
+  await waitFor(() => expect(controlledJobs.get(name)).toBeTruthy())
+  return controlledJobs.get(name)!
 }
 
 describe('flujo de lote', () => {
@@ -55,7 +36,7 @@ describe('flujo de lote', () => {
     chooseTarget('b.png', 'WEBP')
     chooseTarget('datos.csv', 'XLSX')
     fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Descargar ZIP' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Descargar ZIP' })).toBeTruthy())
     expect(screen.getByText(/a\.png: completed/)).toBeTruthy()
     expect(screen.getByText(/b\.png: completed/)).toBeTruthy()
     expect(screen.getByText(/datos\.csv: completed/)).toBeTruthy()
@@ -74,7 +55,7 @@ describe('flujo de lote', () => {
     chooseTarget('a.png', 'JPG')
     expect(screen.getByText(/1 archivo\(s\) sin formato destino/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Descargar ZIP' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Descargar ZIP' })).toBeTruthy())
     expect(screen.getByText(/a\.png: completed/)).toBeTruthy()
     expect(screen.queryByText(/datos\.csv: completed/)).toBeNull()
   })
@@ -84,7 +65,7 @@ describe('flujo de lote', () => {
     chooseTarget('a.png', 'JPG')
     chooseTarget('malo.png', 'JPG')
     fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Descargar ZIP' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Descargar ZIP' })).toBeTruthy())
     expect(screen.getByText(/a\.png: completed/)).toBeTruthy()
     expect(screen.getByText(/malo\.png: error/)).toBeTruthy()
     expect(screen.getByRole('alert').textContent).toContain('dañado')
@@ -101,12 +82,11 @@ describe('flujo de lote', () => {
   })
 
   it('al reconvertir solo procesa los pendientes y preserva lo ya convertido', async () => {
-    hoisted.imageCalls.length = 0
     const { rerender } = render(<FileQueue entries={[imageEntry('a.png')]} />)
     chooseTarget('a.png', 'JPG')
     fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Descargar ZIP' })).toBeTruthy())
-    expect(hoisted.imageCalls).toEqual(['a.png'])
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Descargar ZIP' })).toBeTruthy())
+    expect(converterCalls).toEqual(['a.png'])
 
     // Llega un archivo nuevo a la cola (a.png ya está listo).
     rerender(<FileQueue entries={[imageEntry('a.png'), imageEntry('b.png')]} />)
@@ -117,7 +97,194 @@ describe('flujo de lote', () => {
     fireEvent.click(button)
     await waitFor(() => expect(screen.getByText(/b\.png: completed/)).toBeTruthy())
     // a.png NO se reconvirtió (sigue una sola llamada) y quedó preservado.
-    expect(hoisted.imageCalls).toEqual(['a.png', 'b.png'])
+    expect(converterCalls).toEqual(['a.png', 'b.png'])
     expect(screen.getByText(/a\.png: completed/)).toBeTruthy()
+  })
+
+  // Defecto preexistente (T005/T006): cancelar con resultados previos dejaba `running` en true
+  // para siempre, con la barra trabada en "Cancelar lote" y el botón de convertir deshabilitado.
+  it('cancelar el lote habiendo resultados previos no deja la UI trabada (FR-009)', async () => {
+    render(<FileQueue entries={[imageEntry('a.png'), imageEntry('control-1.png')]} />)
+    chooseTarget('a.png', 'JPG')
+    chooseTarget('control-1.png', 'JPG')
+    fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
+
+    // a.png ya dejó resultado; control-1.png sigue colgado y el lote está corriendo.
+    await waitFor(() => expect(screen.getByText(/a\.png: completed/)).toBeTruthy())
+    await waitForControlled('control-1.png')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar lote' }))
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Cancelar lote' })).toBeNull())
+    const convertButton = await screen.findByRole('button', { name: /Convertir/ })
+    expect(convertButton.hasAttribute('disabled')).toBe(false)
+    expect(screen.getByText(/control-1\.png: cancelled/)).toBeTruthy()
+    // El resultado previo sobrevive: la descarga del ZIP sigue ofrecida.
+    expect(screen.getByRole('button', { name: 'Descargar ZIP' })).toBeTruthy()
+  })
+})
+
+describe('reintento por archivo (FR-013, FR-014)', () => {
+  it('ofrece reintentar en el fallo transitorio y no en el determinístico', async () => {
+    render(<FileQueue entries={[queueEntry('memoria.png'), queueEntry('protegido.png')]} />)
+    chooseTarget('memoria.png', 'JPG')
+    chooseTarget('protegido.png', 'JPG')
+    fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
+
+    await waitFor(() => expect(screen.getByText(/protegido\.png: error/)).toBeTruthy())
+    expect(screen.getByText(/memoria\.png: error/)).toBeTruthy()
+
+    expect(screen.getByRole('button', { name: 'Reintentar memoria.png' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Reintentar protegido.png' })).toBeNull()
+  })
+
+  it('reintentar reprocesa solo ese archivo y preserva los resultados de los demás', async () => {
+    render(<FileQueue entries={[queueEntry('a.png'), queueEntry('intermitente.png')]} />)
+    chooseTarget('a.png', 'JPG')
+    chooseTarget('intermitente.png', 'JPG')
+    fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
+
+    await waitFor(() => expect(screen.getByText(/intermitente\.png: error/)).toBeTruthy())
+    expect(screen.getByText(/a\.png: completed/)).toBeTruthy()
+    expect(converterCalls).toEqual(['a.png', 'intermitente.png'])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar intermitente.png' }))
+
+    await waitFor(() => expect(screen.getByText(/intermitente\.png: completed/)).toBeTruthy())
+    // Solo se reprocesó el archivo reintentado; a.png sigue listo y sin reconvertir.
+    expect(converterCalls).toEqual(['a.png', 'intermitente.png', 'intermitente.png'])
+    expect(screen.getByText(/a\.png: completed/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Reintentar intermitente.png' })).toBeNull()
+  })
+})
+
+describe('resumen del lote (FR-016)', () => {
+  it('informa listos, con error y cancelados', async () => {
+    render(<FileQueue entries={[queueEntry('a.png'), queueEntry('malo.png'), queueEntry('control-1.png')]} />)
+    chooseTarget('a.png', 'JPG')
+    chooseTarget('malo.png', 'JPG')
+    chooseTarget('control-1.png', 'JPG')
+    fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
+
+    await waitForControlled('control-1.png')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar lote' }))
+
+    const summary = await screen.findByText(/Lote terminado/)
+    expect(summary.textContent).toContain('1 archivo listo')
+    expect(summary.textContent).toContain('1 con error')
+    expect(summary.textContent).toContain('1 cancelado')
+    // El mismo resumen se anuncia una sola vez para lectores de pantalla.
+    await waitFor(() => expect(screen.getByTestId('live-region').textContent).toContain('1 cancelado'))
+  })
+})
+
+describe('pausar y reanudar el lote (FR-018, FR-019, FR-021)', () => {
+  it('pausar no arranca nada nuevo, marca las filas y reanudar termina el lote', async () => {
+    // Concurrencia 2 para imágenes: con 3 archivos, el tercero espera turno.
+    render(<FileQueue entries={[queueEntry('control-1.png'), queueEntry('control-2.png'), queueEntry('c.png')]} />)
+    for (const name of ['control-1.png', 'control-2.png', 'c.png']) chooseTarget(name, 'JPG')
+    fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
+
+    await waitForControlled('control-1.png')
+    await waitForControlled('control-2.png')
+    expect(converterCalls).toEqual(['control-1.png', 'control-2.png'])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pausar lote' }))
+    expect(await screen.findByText(/c\.png: paused/)).toBeTruthy()
+
+    // Termina un archivo en vuelo: aun así no se despacha el que espera turno.
+    act(() => { controlledJobs.get('control-1.png')!.finish() })
+    await waitFor(() => expect(screen.getByText(/control-1\.png: completed/)).toBeTruthy())
+    expect(converterCalls).toEqual(['control-1.png', 'control-2.png'])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reanudar lote' }))
+    await waitFor(() => expect(converterCalls).toContain('c.png'))
+
+    act(() => { controlledJobs.get('control-2.png')!.finish() })
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Cancelar lote' })).toBeNull())
+    expect(screen.getByText(/c\.png: completed/)).toBeTruthy()
+  })
+
+  it('cancelar estando pausado termina el lote sin reanudar', async () => {
+    render(<FileQueue entries={[queueEntry('control-1.png'), queueEntry('control-2.png'), queueEntry('c.png')]} />)
+    for (const name of ['control-1.png', 'control-2.png', 'c.png']) chooseTarget(name, 'JPG')
+    fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
+    await waitForControlled('control-1.png')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pausar lote' }))
+    await screen.findByText(/c\.png: paused/)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar lote' }))
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Cancelar lote' })).toBeNull())
+    expect(screen.getByText(/c\.png: cancelled/)).toBeTruthy()
+    expect(converterCalls).not.toContain('c.png')
+  })
+})
+
+describe('watchdog por archivo (FR-015)', () => {
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers() })
+
+  /** Deja correr las promesas pendientes sin dejar de usar timers falsos. */
+  const flush = async (ms = 0) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms) }) }
+
+  it('aborta el archivo que deja de reportar avance y sigue con el resto', async () => {
+    render(<FileQueue entries={[queueEntry('control-colgado.png'), queueEntry('a.png')]} />)
+    chooseTarget('control-colgado.png', 'JPG')
+    chooseTarget('a.png', 'JPG')
+    fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
+
+    await flush()
+    expect(controlledJobs.get('control-colgado.png')).toBeTruthy()
+    // El otro archivo del lote no espera al colgado.
+    expect(screen.getByText(/a\.png: completed/)).toBeTruthy()
+
+    await flush(WATCHDOG_MS)
+
+    expect(screen.getByText(/control-colgado\.png: error/)).toBeTruthy()
+    expect(screen.getByRole('alert').textContent).toContain('inactividad')
+    // El vencimiento es transitorio: reintentar tiene sentido y se ofrece (FR-013).
+    expect(screen.getByRole('button', { name: 'Reintentar control-colgado.png' })).toBeTruthy()
+    // El lote terminó: ya no está corriendo.
+    expect(screen.queryByRole('button', { name: 'Cancelar lote' })).toBeNull()
+  })
+
+  it('vuelca el último progreso reportado sin un render por evento (FR-023)', async () => {
+    render(<FileQueue entries={[queueEntry('control-vivo.png')]} />)
+    chooseTarget('control-vivo.png', 'JPG')
+    fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
+    await flush()
+
+    const job = controlledJobs.get('control-vivo.png')!
+    // Ráfaga de eventos como la de ffmpeg: se acumulan y se vuelcan de a un cuadro.
+    act(() => { for (let percent = 5; percent <= 95; percent += 5) job.emitProgress(percent) })
+    await flush(32)
+
+    const bar = screen.getByRole('progressbar', { name: 'Progreso de control-vivo.png' })
+    expect(bar.getAttribute('aria-valuenow')).toBe('95')
+
+    act(() => { job.finish() })
+    await flush()
+    expect(screen.getByText(/control-vivo\.png: completed/)).toBeTruthy()
+  })
+
+  it('no aborta al archivo que sigue reportando avance', async () => {
+    render(<FileQueue entries={[queueEntry('control-vivo.png')]} />)
+    chooseTarget('control-vivo.png', 'JPG')
+    fireEvent.click(screen.getByRole('button', { name: 'Convertir todos' }))
+    await flush()
+
+    // Tres cuartos del plazo, un latido de progreso, y otra vez tres cuartos: sin el reinicio
+    // del plazo esto ya lo habría abortado.
+    await flush(WATCHDOG_MS * 0.75)
+    act(() => { controlledJobs.get('control-vivo.png')!.emitProgress(50) })
+    await flush(WATCHDOG_MS * 0.75)
+
+    expect(screen.getByText(/control-vivo\.png: converting/)).toBeTruthy()
+
+    act(() => { controlledJobs.get('control-vivo.png')!.finish() })
+    await flush()
+    expect(screen.getByText(/control-vivo\.png: completed/)).toBeTruthy()
   })
 })
