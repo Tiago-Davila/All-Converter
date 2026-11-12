@@ -1,5 +1,6 @@
 """Esquema de planilla que escribe el modelo de lenguaje para crear un XLSX."""
 
+import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -10,6 +11,13 @@ MAX_FILAS_EXCEL = 1048576
 _CARACTERES_PROHIBIDOS_HOJA = frozenset(":\\/?*[]")
 
 TipoColumna = Literal["texto", "numero", "entero", "moneda", "porcentaje", "fecha"]
+# Tipos que admiten totales y reglas de formato condicional numéricas.
+TIPOS_NUMERICOS: frozenset[TipoColumna] = frozenset({"numero", "entero", "moneda", "porcentaje"})
+TIPOS_SUMABLES: frozenset[TipoColumna] = frozenset({"numero", "entero", "moneda"})
+
+_NOMBRE_TABLA = re.compile(r"[A-Za-z_\\][A-Za-z0-9_.]{0,254}")
+# Un nombre de tabla no puede confundirse con una celda (A1) ni con notación R1C1.
+_PARECE_CELDA = re.compile(r"([A-Za-z]{1,3}\d+|[RrCc]\d*|[Rr]\d*[Cc]\d*)")
 
 
 # Fórmula explícita: es la única forma de que una celda calcule algo.
@@ -63,6 +71,35 @@ class Columna(BaseModel):
         return valor
 
 
+# Regla de formato condicional que colorea celdas numéricas de una columna.
+class ReglaCondicional(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    columna: str = Field(min_length=1, description="Nombre de una columna numérica de la hoja.")
+    operador: Literal[
+        "mayor", "menor", "mayor_igual", "menor_igual", "igual", "distinto", "entre"
+    ] = Field(description="Comparación que deben cumplir las celdas.")
+    valor: float = Field(description="Valor de comparación (límite inferior en 'entre').")
+    valor2: float | None = Field(
+        default=None, description="Límite superior; obligatorio solo con 'entre'."
+    )
+    color: str = Field(
+        default="FFC7CE",
+        pattern=r"^#?[0-9A-Fa-f]{6}$",
+        description="Color de fondo hexadecimal RRGGBB.",
+    )
+
+    # 'entre' necesita dos límites ordenados y el resto de operadores uno solo.
+    @model_validator(mode="after")
+    def _validar_limites(self) -> "ReglaCondicional":
+        if self.operador == "entre":
+            if self.valor2 is None or self.valor2 < self.valor:
+                raise ValueError("Con 'entre' indicá valor2 mayor o igual que valor.")
+        elif self.valor2 is not None:
+            raise ValueError("valor2 solo se usa con el operador 'entre'.")
+        return self
+
+
 # Hoja de cálculo con columnas tipadas y filas de valores.
 class Hoja(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -78,6 +115,32 @@ class Hoja(BaseModel):
         max_length=MAX_FILAS_EXCEL - 2,
         description="Filas de datos; cada fila tiene un valor por columna (null deja vacía).",
     )
+    fila_totales: bool = Field(
+        default=False,
+        description="Agrega debajo de los datos una fila 'Total' que suma las columnas numero, "
+        "entero y moneda.",
+    )
+    formato_condicional: list[ReglaCondicional] = Field(
+        default_factory=list, max_length=50, description="Reglas que colorean celdas."
+    )
+    tabla: str | None = Field(
+        default=None,
+        description="Nombre de una tabla de Excel sobre encabezado y datos, por ejemplo "
+        "'Ventas2026'. Permite referencias como Ventas2026[Precio] en fórmulas.",
+    )
+
+    # Valida el nombre de tabla con las reglas de Excel.
+    @field_validator("tabla")
+    @classmethod
+    def _validar_tabla(cls, valor: str | None) -> str | None:
+        if valor is None:
+            return None
+        if not _NOMBRE_TABLA.fullmatch(valor) or _PARECE_CELDA.fullmatch(valor):
+            raise ValueError(
+                "El nombre de tabla debe empezar con letra o guion bajo, tener solo letras, "
+                "números, puntos o guiones bajos y no parecerse a una celda como A1."
+            )
+        return valor
 
     # Aplica las reglas de Excel para nombres de hoja.
     @field_validator("nombre")
@@ -109,6 +172,15 @@ class Hoja(BaseModel):
                     f"La fila {numero} de la hoja '{self.nombre}' tiene {len(fila)} valores y "
                     f"la hoja define {esperadas} columnas. Usá null para dejar celdas vacías."
                 )
+        if self.tabla is not None and not self.filas:
+            raise ValueError(f"La tabla '{self.tabla}' necesita al menos una fila de datos.")
+        tipos = {columna.nombre: columna.tipo for columna in self.columnas}
+        for regla in self.formato_condicional:
+            if tipos.get(regla.columna) not in TIPOS_NUMERICOS:
+                raise ValueError(
+                    f"La regla de formato condicional usa la columna '{regla.columna}', que no "
+                    "existe o no es numérica (numero, entero, moneda o porcentaje)."
+                )
         return self
 
 
@@ -124,6 +196,9 @@ class Planilla(BaseModel):
         nombres = [hoja.nombre.lower() for hoja in self.hojas]
         if len(nombres) != len(set(nombres)):
             raise ValueError("Hay hojas con el mismo nombre; cada hoja necesita un nombre único.")
+        tablas = [hoja.tabla.lower() for hoja in self.hojas if hoja.tabla is not None]
+        if len(tablas) != len(set(tablas)):
+            raise ValueError("Hay tablas con el mismo nombre; cada tabla necesita un nombre único.")
         return self
 
     # Total de filas de datos de todas las hojas, para aplicar el límite configurado.

@@ -6,12 +6,15 @@ from io import BytesIO
 
 from openpyxl import Workbook
 from openpyxl.cell.cell import Cell
+from openpyxl.formatting.rule import CellIsRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.worksheet.worksheet import Worksheet
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from convertitodo_mcp.blocks.planilla import (
+    TIPOS_SUMABLES,
     Columna,
     Formula,
     Hoja,
@@ -51,10 +54,11 @@ def escribir_celda(
     *,
     hojas: Collection[str],
     ubicacion: str,
+    tablas: Collection[str] = (),
 ) -> None:
     """Escribe un literal tipado o una fórmula validada con su formato numérico."""
     if isinstance(valor, Formula):
-        celda.value = validar_formula(valor.formula, hojas, ubicacion)
+        celda.value = validar_formula(valor.formula, hojas, ubicacion, tablas)
         celda.number_format = formato or FORMATOS[tipo]
         return
     convertido = convertir_valor(valor, tipo, ubicacion)
@@ -135,7 +139,8 @@ def aplicar_formato(hoja_xlsx: Worksheet, hoja: Hoja, opciones: OpcionesXLSX) ->
             celda.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     if opciones.congelar_encabezado:
         hoja_xlsx.freeze_panes = "A2"
-    if opciones.autofiltro:
+    # Una tabla de Excel trae su propio filtro: no puede convivir con el de la hoja.
+    if opciones.autofiltro and hoja.tabla is None:
         hoja_xlsx.auto_filter.ref = f"A1:{ultima}{len(hoja.filas) + 1}"
     for indice, columna in enumerate(hoja.columnas, start=1):
         letra = get_column_letter(indice)
@@ -154,11 +159,66 @@ def aplicar_formato(hoja_xlsx: Worksheet, hoja: Hoja, opciones: OpcionesXLSX) ->
             hoja_xlsx.column_dimensions[letra].width = ancho
 
 
+_OPERADORES = {
+    "mayor": "greaterThan",
+    "menor": "lessThan",
+    "mayor_igual": "greaterThanOrEqual",
+    "menor_igual": "lessThanOrEqual",
+    "igual": "equal",
+    "distinto": "notEqual",
+    "entre": "between",
+}
+FUENTE_TOTALES = Font(bold=True)
+BORDE_TOTALES = Border(top=Side(style="thin", color="000000"))
+
+
+def escribir_totales(
+    hoja_xlsx: Worksheet, columnas: list[Columna], formatos: list[str | None], filas: int
+) -> None:
+    """Escribe la fila Total con SUBTOTAL, que ignora filas ocultas por filtros."""
+    numero = filas + 2
+    for indice, (columna, formato) in enumerate(zip(columnas, formatos, strict=True), 1):
+        celda = hoja_xlsx.cell(row=numero, column=indice)
+        if columna.tipo in TIPOS_SUMABLES:
+            letra = get_column_letter(indice)
+            celda.value = f"=SUBTOTAL(109,{letra}2:{letra}{filas + 1})"
+            celda.number_format = formato or FORMATOS[columna.tipo]
+        elif indice == 1:
+            celda.value = "Total"
+        celda.font = FUENTE_TOTALES
+        celda.border = BORDE_TOTALES
+
+
+def _aplicar_extras(hoja_xlsx: Worksheet, hoja: Hoja, formatos: list[str | None]) -> None:
+    filas = len(hoja.filas)
+    indices = {columna.nombre: indice for indice, columna in enumerate(hoja.columnas, 1)}
+    for regla in hoja.formato_condicional:
+        letra = get_column_letter(indices[regla.columna])
+        limites = [regla.valor] if regla.valor2 is None else [regla.valor, regla.valor2]
+        color = regla.color.removeprefix("#").upper()
+        hoja_xlsx.conditional_formatting.add(
+            f"{letra}2:{letra}{max(filas, 1) + 1}",
+            CellIsRule(
+                operator=_OPERADORES[regla.operador],
+                formula=[repr(limite) for limite in limites],
+                fill=PatternFill(fill_type="solid", start_color=color, end_color=color),
+            ),
+        )
+    if hoja.tabla is not None:
+        ultima = get_column_letter(len(hoja.columnas))
+        tabla = Table(displayName=hoja.tabla, ref=f"A1:{ultima}{filas + 1}")
+        tabla.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=True)
+        hoja_xlsx.add_table(tabla)
+    if hoja.fila_totales:
+        escribir_totales(hoja_xlsx, hoja.columnas, formatos, filas)
+
+
 def escribir_hoja(
     hoja_xlsx: Worksheet,
     hoja: Hoja,
     hojas: Collection[str],
     opciones: OpcionesXLSX | None = None,
+    tablas: Collection[str] = (),
 ) -> None:
     """Escribe encabezado y filas de datos con sus tipos reales y aplica el formato."""
     opciones = opciones or OpcionesXLSX()
@@ -175,10 +235,12 @@ def escribir_hoja(
                 columna.tipo,
                 formato,
                 hojas=hojas,
+                tablas=tablas,
                 ubicacion=(
                     f"la hoja '{hoja.nombre}', fila {numero - 1}, columna '{columna.nombre}'"
                 ),
             )
+    _aplicar_extras(hoja_xlsx, hoja, formatos)
     aplicar_formato(hoja_xlsx, hoja, opciones)
 
 
@@ -190,8 +252,9 @@ def renderizar_xlsx(
     libro = Workbook()
     libro.remove(libro.worksheets[0])
     hojas = [hoja.nombre for hoja in planilla.hojas]
+    tablas = [hoja.tabla for hoja in planilla.hojas if hoja.tabla is not None]
     for hoja in planilla.hojas:
-        escribir_hoja(libro.create_sheet(hoja.nombre), hoja, hojas, opciones)
+        escribir_hoja(libro.create_sheet(hoja.nombre), hoja, hojas, opciones, tablas)
     libro.properties.creator = "ConvertiTodo"
     salida = BytesIO()
     libro.save(salida)

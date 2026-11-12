@@ -71,8 +71,20 @@ def _hoja_de_referencia(prefijo: str) -> str:
     return prefijo
 
 
-def _validar_referencia(token: Token, hojas: Collection[str], ubicacion: str) -> None:
+def _validar_referencia(
+    token: Token, hojas: Collection[str], tablas: Collection[str], ubicacion: str
+) -> None:
     valor = token.value
+    tabla, corchete, _ = valor.partition("[")
+    if corchete and tabla and "!" not in valor:
+        # Referencia estructurada a una tabla de esta planilla, por ejemplo Ventas[Precio].
+        if tabla.lower() not in {nombre.lower() for nombre in tablas}:
+            raise _error(
+                ubicacion,
+                f"la tabla '{tabla}' no existe en la planilla.",
+                "usá el nombre de una tabla definida con el campo 'tabla' de una hoja.",
+            )
+        return
     if valor.startswith("[") or "]!" in valor or "[" in valor.split("!")[0]:
         raise _error(
             ubicacion,
@@ -115,7 +127,9 @@ def _validar_funcion(token: Token, ubicacion: str) -> None:
         raise _error(ubicacion, f"la función {nombre} no se reconoce.", como)
 
 
-def validar_formula(formula: str, hojas: Collection[str], ubicacion: str) -> str:
+def validar_formula(
+    formula: str, hojas: Collection[str], ubicacion: str, tablas: Collection[str] = ()
+) -> str:
     """Devuelve la fórmula normalizada con '=' inicial o lanza ErrorArgumento."""
     texto = formula.strip()
     if not texto.startswith("="):
@@ -143,7 +157,7 @@ def validar_formula(formula: str, hojas: Collection[str], ubicacion: str) -> str
         if token.type == Token.FUNC and token.subtype == Token.OPEN:
             _validar_funcion(token, ubicacion)
         elif token.type == Token.OPERAND and token.subtype == Token.RANGE:
-            _validar_referencia(token, hojas, ubicacion)
+            _validar_referencia(token, hojas, tablas, ubicacion)
         elif (
             token.type == Token.OPERAND
             and token.subtype == Token.ERROR
