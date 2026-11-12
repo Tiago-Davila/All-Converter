@@ -4,7 +4,7 @@ Servidor MCP en Python para que un modelo local (llama-server, OpenCode) pueda *
 Excel** a partir de Markdown o bloques estructurados, **leer documentos** y **convertir entre
 formatos**. Corre en la máquina del usuario o en su red local.
 
-> **Estado actual: fase 3.** El servidor ofrece `ping` y `crear_pdf` por stdio y HTTP.
+> **Estado actual: fase 4.** El servidor ofrece `ping`, `crear_pdf` y `crear_docx` por stdio y HTTP.
 > Por HTTP exige un token Bearer y permite subir y descargar archivos (`POST /files`,
 > `GET /files/{id}`). Las demás conversiones y la lectura están pendientes.
 > Hoja de ruta completa: issues #104 a #113.
@@ -96,6 +96,7 @@ Si hay un error de configuración, el servidor lo explica en stderr y termina co
 |---|---|
 | `ping` | Sin argumentos. Comprueba que el servidor responde y devuelve `estado` (`ok`), `servidor`, `version` y `hora` (ISO 8601, UTC). Es de solo lectura. |
 | `crear_pdf` | Crea un PDF a partir de Markdown o bloques y devuelve `id`, `nombre`, `paginas` y `url`. |
+| `crear_docx` | Crea un Word editable con Markdown o bloques; devuelve `id`, `nombre` y `url`. |
 
 
 ### Crear un PDF
@@ -127,6 +128,32 @@ milímetros, `titulo` y `autor` en los metadatos y `numerar_paginas`. Sin títul
 usa el argumento `titulo`; la numeración requiere margen inferior de al menos 10 mm. El resultado
 contiene una URL relativa `/files/{id}`: solo es descargable por HTTP con el token. En stdio no se
 habilita HTTP; el archivo queda en la carpeta `outputs/` del directorio de trabajo hasta su TTL.
+
+### Crear un Word editable
+
+`crear_docx` exige `titulo` (hasta 255 caracteres) y exactamente uno de `markdown` o
+`bloques`, con el mismo modelo de bloques que PDF. Usa estilos nativos de Word para títulos,
+listas y tablas, conservando formato en línea y enlaces clicables. Las imágenes se indican
+por id de un archivo subido.
+
+```json
+{
+  "titulo": "Informe de ventas",
+  "markdown": "## Resumen\n\nTexto con **negrita** y una lista:\n\n- Café\n- Té",
+  "opciones": {
+    "tamano": "A4",
+    "orientacion": "vertical",
+    "margenes": {"superior": 25, "inferior": 25, "izquierdo": 25, "derecho": 25},
+    "tabla_contenido": true
+  }
+}
+```
+
+`tabla_contenido` inserta un campo TOC de Word; actualizá los campos al abrir el archivo
+si Word no lo hace automáticamente. `plantilla` admite el id de un `.docx` subido: conserva
+su contenido y estilos y agrega el documento nuevo al final. Las opciones de página omitidas
+conservan la configuración de la plantilla; sin plantilla se usa A4 vertical con márgenes de
+25 mm. La descarga y el TTL funcionan igual que en `crear_pdf`, sin habilitar HTTP en stdio.
 
 ---
 
