@@ -154,7 +154,10 @@ por id de un archivo subido.
 si Word no lo hace automáticamente. `plantilla` admite el id de un `.docx` subido: conserva
 su contenido y estilos y agrega el documento nuevo al final. Las opciones de página omitidas
 conservan la configuración de la plantilla; sin plantilla se usa A4 vertical con márgenes de
-25 mm. La descarga y el TTL funcionan igual que en `crear_pdf`, sin habilitar HTTP en stdio.
+25 mm. Se rechazan documentos corruptos, macros, objetos incrustados y recursos externos
+activos; los enlaces http/https/mailto sí se conservan. El paquete descomprimido también está
+limitado por `CONVERTITODO_MCP_MAX_MB`; el validador no admite XML UTF-16.
+La descarga y el TTL funcionan igual que en `crear_pdf`, sin habilitar HTTP en stdio.
 
 ### Editar un Word
 
@@ -279,6 +282,18 @@ uv run ruff format --check . # formato
 uv run mypy                  # tipos (estricto)
 uv run pytest                # tests
 ```
+
+Prueba cruzada DOCX → PDF con el conversor de la app web (desde la raíz del repo, con
+las dependencias de `all-converter/` instaladas):
+
+```bash
+node mcp/scripts/verificar-docx-web.mjs /ruta/documento.docx /ruta/resultado.pdf
+```
+
+Este comando ejecuta un solo test con un worker y limpia su archivo de prueba temporal.
+Comprueba el motor de conversión, sin abrir la interfaz. La conversión web tiene fidelidad
+parcial: no conserva el diseño exacto ni todos los niveles de listas anidadas. No reemplaza
+una revisión nativa del documento en Word.
 
 Los tests reutilizan los fixtures reales de la app web (`all-converter/tests/fixtures/`), así que
 el MCP y la app se prueban contra los mismos archivos. La CI corre estos mismos comandos en

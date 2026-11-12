@@ -1,21 +1,21 @@
 """Pruebas de la herramienta de creación DOCX."""
 
-from io import BytesIO
 from collections.abc import Callable
+from io import BytesIO
 from pathlib import Path
 from threading import Event
 
 import anyio
 import pytest
 from docx import Document
+from docx.opc.constants import RELATIONSHIP_TYPE
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.opc.constants import RELATIONSHIP_TYPE
 from fastmcp.exceptions import ToolError
 
 from convertitodo_mcp.blocks import Documento
-from convertitodo_mcp.server.config import Configuracion
 from convertitodo_mcp.render.docx_edit import AgregarSeccion, AgregarTabla, ReemplazarTexto
+from convertitodo_mcp.server.config import Configuracion
 from convertitodo_mcp.server.docx import crear_herramienta_docx, crear_herramienta_editar_docx
 from convertitodo_mcp.storage import Almacen
 

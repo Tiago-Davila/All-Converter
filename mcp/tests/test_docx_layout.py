@@ -51,7 +51,8 @@ def test_indice_es_opcional_y_usa_estilos_de_titulo() -> None:
     assert len(campos) == 1
     assert campos[0].get(qn("w:instr")) == r'TOC \o "1-6" \h \z \u'
     assert campos[0].get(qn("w:dirty")) == "true"
-    assert doc.paragraphs[0].style.name == "Title"
+    estilo = doc.paragraphs[0].style
+    assert estilo is not None and estilo.name == "Title"
     ajuste = doc.settings.element.find(qn("w:updateFields"))
     assert ajuste is not None and ajuste.get(qn("w:val")) == "true"
 
@@ -184,11 +185,13 @@ def test_plantilla_rechaza_contenido_peligroso(
     from zipfile import ZIP_DEFLATED, ZipFile
 
     salida = BytesIO()
-    with ZipFile(BytesIO(fixture_bytes("sample.docx"))) as original:
-        with ZipFile(salida, "w", ZIP_DEFLATED) as modificado:
-            for info in original.infolist():
-                modificado.writestr(info, original.read(info))
-            modificado.writestr(entrada, contenido)
+    with (
+        ZipFile(BytesIO(fixture_bytes("sample.docx"))) as original,
+        ZipFile(salida, "w", ZIP_DEFLATED) as modificado,
+    ):
+        for info in original.infolist():
+            modificado.writestr(info, original.read(info))
+        modificado.writestr(entrada, contenido)
     almacen = Almacen(tmp_path)
     archivo = almacen.guardar_subida("malo.docx", salida.getvalue())
     with pytest.raises(ErrorFormatoNoSoportado):

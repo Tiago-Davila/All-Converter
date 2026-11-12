@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Awaitable
 from typing import Protocol
 
 from pydantic import BaseModel
 
 from convertitodo_mcp.blocks import Bloque, Documento, markdown_a_bloques
-from convertitodo_mcp.errores import ErrorArgumento, herramienta_segura
-from convertitodo_mcp.errores import ErrorLimiteExcedido
+from convertitodo_mcp.errores import ErrorArgumento, ErrorLimiteExcedido, herramienta_segura
 from convertitodo_mcp.limites import ejecutar_con_limite, verificar_bloques, verificar_texto
 from convertitodo_mcp.render.docx import renderizar_docx
 from convertitodo_mcp.render.docx_edit import OperacionDOCX, bloques_operaciones, editar_documento
@@ -26,13 +26,13 @@ class ResultadoDOCX(BaseModel):
 
 
 class HerramientaDOCX(Protocol):
-    async def __call__(
+    def __call__(
         self,
         titulo: str,
         markdown: str | None = None,
         bloques: list[Bloque] | None = None,
         opciones: OpcionesDOCX | None = None,
-    ) -> ResultadoDOCX: ...
+    ) -> Awaitable[ResultadoDOCX]: ...
 
 
 def crear_herramienta_docx(almacen: Almacen, config: Configuracion) -> HerramientaDOCX:
@@ -84,7 +84,9 @@ def crear_herramienta_docx(almacen: Almacen, config: Configuracion) -> Herramien
 
 
 class HerramientaEditarDOCX(Protocol):
-    async def __call__(self, archivo: str, operaciones: list[OperacionDOCX]) -> ResultadoDOCX: ...
+    def __call__(
+        self, archivo: str, operaciones: list[OperacionDOCX]
+    ) -> Awaitable[ResultadoDOCX]: ...
 
 
 def crear_herramienta_editar_docx(almacen: Almacen, config: Configuracion) -> HerramientaEditarDOCX:

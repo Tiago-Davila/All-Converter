@@ -4,9 +4,9 @@ from io import BytesIO
 from typing import Annotated, Literal, cast
 
 from docx.document import Document
+from docx.opc.part import Part
 from docx.oxml.ns import qn
 from docx.oxml.xmlchemy import BaseOxmlElement
-from docx.opc.part import Part
 from docx.parts.hdrftr import FooterPart, HeaderPart
 from pydantic import BaseModel, ConfigDict, Field
 

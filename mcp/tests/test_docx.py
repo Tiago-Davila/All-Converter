@@ -3,7 +3,7 @@
 from io import BytesIO
 
 from docx import Document
-from docx.shared import Pt
+from docx.oxml.ns import nsmap
 
 from convertitodo_mcp.blocks import Documento
 from convertitodo_mcp.render.docx import agregar_bloques, renderizar_docx
@@ -31,7 +31,7 @@ def test_bloques_basicos_editables() -> None:
     documento = Document(BytesIO(renderizar_docx(bloques, titulo="Documento")))
     parrafos = documento.paragraphs
     assert documento.core_properties.title == "Documento"
-    assert [p.style.name for p in parrafos[:6]] == [
+    assert [p.style.name if p.style is not None else None for p in parrafos[:6]] == [
         "Title",
         "Heading 1",
         "Heading 3",
@@ -40,9 +40,10 @@ def test_bloques_basicos_editables() -> None:
         "List Number",
     ]
     assert parrafos[3].text == "Texto <literal>"
-    assert parrafos[5].paragraph_format.left_indent == Pt(72)
+    assert parrafos[5]._p.xpath("./w:pPr/w:numPr/w:ilvl/@w:val") == ["1"]
     assert parrafos[6].text == "a < b\nsegunda línea"
     assert parrafos[6].runs[0].font.name == "Noto Sans Mono"
+    assert parrafos[7].style is not None
     assert parrafos[7].style.name == "Quote"
     assert 'w:type="page"' in parrafos[8]._p.xml
 
@@ -119,3 +120,36 @@ def test_formato_en_linea_y_enlaces_en_todos_los_bloques() -> None:
         assert enlace.runs[0].font.name == "Noto Sans Mono"
     assert parrafos[-2].hyperlinks[0].runs[0].bold is True
     assert parrafos[-2].runs[-1].bold is True
+
+
+def test_listas_mixtas_tienen_niveles_y_numeracion_independiente() -> None:
+    bloques = Documento.model_validate(
+        {
+            "bloques": [
+                {
+                    "tipo": "lista",
+                    "ordenada": True,
+                    "items": [
+                        {"texto": "Uno", "sublista": {"items": ["Viñeta"]}},
+                        "Dos",
+                    ],
+                },
+                {"tipo": "lista", "ordenada": True, "items": ["Reinicio"]},
+            ]
+        }
+    ).bloques
+    documento = Document(BytesIO(renderizar_docx(bloques)))
+    niveles = [p._p.xpath("./w:pPr/w:numPr/w:ilvl/@w:val")[0] for p in documento.paragraphs]
+    ids = [p._p.xpath("./w:pPr/w:numPr/w:numId/@w:val")[0] for p in documento.paragraphs]
+    assert niveles == ["0", "1", "0", "0"]
+    assert ids[0] == ids[2]
+    assert len({ids[0], ids[1], ids[3]}) == 3
+    numeracion = documento.part.numbering_part.element
+    for indice in (0, 1, 3):
+        num = numeracion.xpath(f'./w:num[@w:numId="{ids[indice]}"]')[0]
+        abstracto_id = num.xpath("./w:abstractNumId/@w:val")[0]
+        abstracto = numeracion.xpath(f'./w:abstractNum[@w:abstractNumId="{abstracto_id}"]')[0]
+        nivel = abstracto.xpath(f'./w:lvl[@w:ilvl="{niveles[indice]}"]', namespaces=nsmap)[0]
+        assert nivel.xpath("./w:start/@w:val", namespaces=nsmap) == ["1"]
+        formato = "bullet" if indice == 1 else "decimal"
+        assert nivel.xpath("./w:numFmt/@w:val", namespaces=nsmap) == [formato]

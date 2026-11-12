@@ -5,13 +5,12 @@ from io import BytesIO
 from math import isfinite
 from typing import Literal, cast
 from urllib.parse import urlsplit
-from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile
 
 from docx import Document
 from docx.document import Document as DocumentoDOCX
 from docx.enum.section import WD_ORIENT
-from docx.oxml import OxmlElement
+from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn
 from docx.shared import Mm, Pt, RGBColor
 from docx.styles.style import _ParagraphStyle
@@ -169,26 +168,26 @@ def cargar_documento(archivo: str, almacen: Almacen, config: Configuracion) -> D
     try:
         with ZipFile(BytesIO(datos)) as paquete:
             entradas = paquete.infolist()
-            nombres = [entrada.filename for entrada in entradas]
+            nombres = [miembro.filename for miembro in entradas]
             if (
                 len(nombres) != len(set(nombres))
                 or "[Content_Types].xml" not in nombres
                 or "word/document.xml" not in nombres
                 or "_rels/.rels" not in nombres
-                or sum(entrada.file_size for entrada in entradas) > config.max_bytes
+                or sum(miembro.file_size for miembro in entradas) > config.max_bytes
             ):
                 raise ValueError
-            for entrada in entradas:
-                nombre = entrada.filename.lower()
+            for miembro in entradas:
+                nombre = miembro.filename.lower()
                 if (
-                    entrada.flag_bits & 1
+                    miembro.flag_bits & 1
                     or nombre.startswith("/")
                     or "\\" in nombre
                     or ".." in nombre.split("/")
                     or nombre.endswith((".bin", ".exe"))
                 ):
                     raise ValueError
-                contenido = paquete.read(entrada)
+                contenido = paquete.read(miembro)
                 if nombre.endswith((".xml", ".rels")):
                     if (
                         b"\x00" in contenido
@@ -196,7 +195,10 @@ def cargar_documento(archivo: str, almacen: Almacen, config: Configuracion) -> D
                         or b"<!entity" in contenido.lower()
                     ):
                         raise ValueError
-                    raiz = ElementTree.fromstring(contenido)
+                    try:
+                        raiz = parse_xml(contenido)
+                    except Exception:
+                        raise ValueError from None
                     if nombre == "[content_types].xml":
                         tipos = " ".join(e.get("ContentType", "").lower() for e in raiz)
                         if "macroenabled" in tipos or "vba" in tipos or "oleobject" in tipos:
@@ -212,7 +214,7 @@ def cargar_documento(archivo: str, almacen: Almacen, config: Configuracion) -> D
                                     destino
                                 ).scheme.lower() not in {"http", "https", "mailto"}:
                                     raise ValueError
-    except (BadZipFile, KeyError, OSError, ValueError, ElementTree.ParseError, RuntimeError):
+    except (BadZipFile, KeyError, OSError, ValueError, RuntimeError):
         raise ErrorFormatoNoSoportado(
             "El documento DOCX no es válido o contiene recursos no permitidos.",
             "subí un DOCX válido sin macros ni recursos externos activos.",
