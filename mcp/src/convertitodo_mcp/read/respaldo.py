@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from io import BytesIO
 from typing import Protocol, cast
 from zipfile import ZipFile
@@ -13,7 +13,6 @@ from docx.table import Table
 from docx.text.paragraph import Paragraph
 from openpyxl import load_workbook
 from pypdf import PdfReader
-from pypdf.errors import PdfReadError
 
 from convertitodo_mcp.errores import (
     ErrorArgumento,
@@ -43,11 +42,23 @@ def abrir_pdf(datos: bytes) -> PdfReader:
             raise ErrorArgumento(
                 "El PDF está protegido con contraseña.", "usá una copia desbloqueada."
             )
+        len(pdf.pages)
         return pdf
-    except (PdfReadError, ValueError, EOFError, OSError):
+    except ErrorArgumento:
+        raise
+    except Exception:
         raise ErrorArgumento(
             "No se pudo abrir el PDF.", "exportalo de nuevo y reintentá."
         ) from None
+
+
+def verificar_texto_pdf(paginas: Sequence[str]) -> None:
+    """Pide OCR local si ninguna página contiene texto extraíble."""
+    if not any(pagina.strip() for pagina in paginas):
+        raise ErrorArgumento(
+            "El PDF no contiene texto extraíble y podría estar escaneado.",
+            "aplicá OCR local al documento y volvé a intentarlo.",
+        )
 
 
 def _escapar(valor: object) -> str:
@@ -131,13 +142,26 @@ def _xlsx(datos: bytes, config: Configuracion) -> tuple[list[str], list[str]]:
 def leer_respaldo(entrada: EntradaDocumento, config: Configuracion) -> DocumentoLeido:
     if entrada.tipo == "pdf":
         pdf = abrir_pdf(entrada.datos)
+        if len(pdf.pages) > config.max_bloques:
+            raise ErrorLimiteExcedido(
+                f"El documento supera el máximo de {config.max_bloques} páginas.",
+                "dividí el documento en archivos más pequeños.",
+            )
         paginas: list[str] = []
         tamano = 0
-        for pagina in pdf.pages:
-            texto = pagina.extract_text() or ""
-            tamano += len(texto.encode("utf-8"))
-            verificar_tamano(tamano, config, que="el texto extraído")
-            paginas.append(texto)
+        try:
+            for pagina in pdf.pages:
+                texto = pagina.extract_text() or ""
+                tamano += len(texto.encode("utf-8"))
+                verificar_tamano(tamano, config, que="el texto extraído")
+                paginas.append(texto)
+        except ErrorLimiteExcedido:
+            raise
+        except Exception:
+            raise ErrorArgumento(
+                "No se pudo leer el PDF.", "exportalo de nuevo y reintentá."
+            ) from None
+        verificar_texto_pdf(paginas)
         return DocumentoLeido(tipo=entrada.tipo, paginas=paginas)
     if entrada.tipo == "docx":
         return DocumentoLeido(tipo=entrada.tipo, paginas=_docx(entrada.datos, config))

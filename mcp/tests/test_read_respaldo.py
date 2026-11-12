@@ -86,3 +86,40 @@ def test_info_pptx_cuenta_diapositivas(tmp_path: Path) -> None:
     assert info_basica(entrada, Configuracion(carpeta_trabajo=tmp_path)).paginas == 2
     with pytest.raises(ErrorLimiteExcedido):
         info_basica(entrada, Configuracion(carpeta_trabajo=tmp_path, max_bloques=1))
+
+
+def test_pdf_escaneado_sugiere_ocr_local(
+    fixture_bytes: Callable[[str], bytes], tmp_path: Path
+) -> None:
+    from convertitodo_mcp.errores import ErrorArgumento
+    from convertitodo_mcp.read.respaldo import info_basica
+
+    entrada = EntradaDocumento("escaneado.pdf", "pdf", fixture_bytes("scanned.pdf"))
+    config = Configuracion(carpeta_trabajo=tmp_path)
+    assert info_basica(entrada, config).paginas
+    with pytest.raises(ErrorArgumento, match="OCR local"):
+        leer_respaldo(entrada, config)
+
+
+@pytest.mark.parametrize(
+    ("nombre", "mensaje"),
+    [("protected.pdf", "desbloqueada"), ("corrupt.pdf", "exportalo de nuevo")],
+)
+def test_pdf_invalido_tiene_error_seguro(
+    fixture_bytes: Callable[[str], bytes], tmp_path: Path, nombre: str, mensaje: str
+) -> None:
+    from convertitodo_mcp.errores import ErrorArgumento
+    from convertitodo_mcp.read.respaldo import info_basica
+
+    entrada = EntradaDocumento(nombre, "pdf", fixture_bytes(nombre))
+    config = Configuracion(carpeta_trabajo=tmp_path)
+    with pytest.raises(ErrorArgumento, match=mensaje):
+        leer_respaldo(entrada, config)
+    with pytest.raises(ErrorArgumento, match=mensaje):
+        info_basica(entrada, config)
+
+
+def test_pdf_con_paginas_vacias_y_texto_no_se_considera_escaneado() -> None:
+    from convertitodo_mcp.read.respaldo import verificar_texto_pdf
+
+    verificar_texto_pdf(["", "contenido", "  "])
