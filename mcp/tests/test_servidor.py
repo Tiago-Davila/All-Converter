@@ -36,7 +36,7 @@ def _config(tmp_path: Path) -> Configuracion:
 async def test_ping_listada(tmp_path: Path) -> None:
     async with Client(crear_servidor(_config(tmp_path))) as cliente:
         herramientas = await cliente.list_tools()
-    assert {h.name for h in herramientas} == {"ping", "crear_pdf", "crear_docx"}
+    assert {h.name for h in herramientas} == {"ping", "crear_pdf", "crear_docx", "editar_docx"}
     ping = next(h for h in herramientas if h.name == "ping")
     assert "Comprueba que el servidor responde" in (ping.description or "")
     assert ping.annotations is not None

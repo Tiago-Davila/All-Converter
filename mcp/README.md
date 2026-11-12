@@ -4,7 +4,7 @@ Servidor MCP en Python para que un modelo local (llama-server, OpenCode) pueda *
 Excel** a partir de Markdown o bloques estructurados, **leer documentos** y **convertir entre
 formatos**. Corre en la máquina del usuario o en su red local.
 
-> **Estado actual: fase 4.** El servidor ofrece `ping`, `crear_pdf` y `crear_docx` por stdio y HTTP.
+> **Estado actual: fase 4.** El servidor ofrece `ping`, `crear_pdf`, `crear_docx` y `editar_docx` por stdio y HTTP.
 > Por HTTP exige un token Bearer y permite subir y descargar archivos (`POST /files`,
 > `GET /files/{id}`). Las demás conversiones y la lectura están pendientes.
 > Hoja de ruta completa: issues #104 a #113.
@@ -97,6 +97,7 @@ Si hay un error de configuración, el servidor lo explica en stderr y termina co
 | `ping` | Sin argumentos. Comprueba que el servidor responde y devuelve `estado` (`ok`), `servidor`, `version` y `hora` (ISO 8601, UTC). Es de solo lectura. |
 | `crear_pdf` | Crea un PDF a partir de Markdown o bloques y devuelve `id`, `nombre`, `paginas` y `url`. |
 | `crear_docx` | Crea un Word editable con Markdown o bloques; devuelve `id`, `nombre` y `url`. |
+| `editar_docx` | Edita una copia de un Word por id; conserva el original y devuelve `id`, `nombre` y `url`. |
 
 
 ### Crear un PDF
@@ -154,6 +155,31 @@ si Word no lo hace automáticamente. `plantilla` admite el id de un `.docx` subi
 su contenido y estilos y agrega el documento nuevo al final. Las opciones de página omitidas
 conservan la configuración de la plantilla; sin plantilla se usa A4 vertical con márgenes de
 25 mm. La descarga y el TTL funcionan igual que en `crear_pdf`, sin habilitar HTTP en stdio.
+
+### Editar un Word
+
+`editar_docx` recibe `archivo` (id de un DOCX subido o generado) y una lista no vacía de
+`operaciones`. Siempre guarda una copia nueva; el archivo original conserva sus bytes.
+
+```json
+{
+  "archivo": "id-del-docx",
+  "operaciones": [
+    {"tipo": "reemplazar_texto", "buscar": "Borrador", "reemplazo": "Versión final"},
+    {"tipo": "agregar_seccion", "titulo": "Conclusiones", "nivel": 1,
+     "bloques": [{"tipo": "parrafo", "texto": "Texto nuevo"}]},
+    {"tipo": "agregar_tabla", "tabla": {"tipo": "tabla",
+     "encabezado": ["Producto", "Unidades"], "filas": [["Café", "120"]]}}
+  ]
+}
+```
+
+El reemplazo es literal, distingue mayúsculas y opera dentro de cada párrafo del cuerpo,
+las tablas, los encabezados y los pies existentes. Encuentra coincidencias repartidas entre
+runs y conserva los demás nodos y formatos; el texto nuevo hereda el formato del inicio de
+la coincidencia. No busca entre párrafos. `agregar_seccion` agrega un título y sus bloques al
+final; no crea una sección de página distinta. `agregar_tabla` agrega una tabla al final.
+Los límites y el timeout también se aplican a la edición.
 
 ---
 
