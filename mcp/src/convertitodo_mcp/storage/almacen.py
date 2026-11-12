@@ -43,6 +43,11 @@ class Almacen:
     def __init__(self, carpeta_trabajo: Path) -> None:
         self._base = carpeta_trabajo
 
+    # Devuelve la carpeta base del almacén.
+    @property
+    def carpeta_trabajo(self) -> Path:
+        return self._base
+
     # Crea la carpeta de trabajo y sus zonas con permisos 0o700; es idempotente.
     def preparar(self) -> None:
         for carpeta in (self._base, *(self._base / zona for zona in _ZONAS)):

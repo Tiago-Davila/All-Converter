@@ -11,6 +11,8 @@ from convertitodo_mcp import __version__
 from convertitodo_mcp.errores import herramienta_segura
 from convertitodo_mcp.server.auth import crear_verificador
 from convertitodo_mcp.server.config import Configuracion
+from convertitodo_mcp.storage.almacen import Almacen
+from convertitodo_mcp.storage.limpieza import crear_ciclo_de_vida
 
 NOMBRE_SERVIDOR = "ConvertiTodo"
 
@@ -35,12 +37,14 @@ def ping() -> dict[str, str]:
 
 # Crea una instancia nueva del servidor con sus herramientas, sin arrancarla ni tocar el disco.
 def crear_servidor(config: Configuracion) -> FastMCP:
+    almacen = Almacen(config.carpeta_trabajo)
     servidor = FastMCP(
         NOMBRE_SERVIDOR,
         INSTRUCCIONES,
         version=__version__,
         mask_error_details=True,
         auth=crear_verificador(config),
+        lifespan=crear_ciclo_de_vida(almacen, config),
     )
     servidor.tool(
         ping,
