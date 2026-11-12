@@ -5,8 +5,8 @@ Excel** a partir de Markdown o bloques estructurados, **leer documentos** y **co
 formatos**. Corre en la máquina del usuario o en su red local.
 
 > **Estado actual: servidor mínimo (fase 2, en curso).** Hoy el servidor arranca por stdio y por
-> HTTP y ofrece la herramienta `ping`. Todavía no crea, lee ni convierte documentos, y la
-> protección por token llega en T009. Hoja de ruta completa: issues #104 a #113.
+> HTTP y ofrece la herramienta `ping`. Por HTTP exige un token Bearer. Todavía no crea, lee ni
+> convierte documentos. Hoja de ruta completa: issues #104 a #113.
 
 ---
 
@@ -38,7 +38,7 @@ exista (por ejemplo un error de tipeo) hace que el servidor no arranque y expliq
 | `CONVERTITODO_MCP_TRANSPORTE` | Transporte del servidor: `stdio` o `http`. | `stdio` |
 | `CONVERTITODO_MCP_HOST` | Dirección en la que escucha el transporte HTTP. No puede estar vacía. | `127.0.0.1` |
 | `CONVERTITODO_MCP_PORT` | Puerto del transporte HTTP, de 1 a 65535. | `8765` |
-| `CONVERTITODO_MCP_TOKEN` | Token Bearer que deben enviar los clientes HTTP. Mínimo 16 caracteres; vacío equivale a no definirlo. | Sin valor. Obligatorio para HTTP; el servidor no arranca en `0.0.0.0` sin token. |
+| `CONVERTITODO_MCP_TOKEN` | Token Bearer que deben enviar los clientes HTTP. Mínimo 16 caracteres; vacío equivale a no definirlo. | Sin valor. Obligatorio para HTTP en cualquier host: sin token el servidor no arranca. En stdio no se usa. |
 | `CONVERTITODO_MCP_WORKDIR` | Carpeta de trabajo, con `uploads/` (entradas) y `outputs/` (resultados). Se expande `~`. | `$XDG_DATA_HOME/convertitodo-mcp` o `~/.local/share/convertitodo-mcp` |
 | `CONVERTITODO_MCP_TTL_MINUTOS` | Minutos tras los cuales se borran automáticamente los archivos viejos (mínimo 1). | `60` |
 | `CONVERTITODO_MCP_MAX_MB` | Tamaño máximo de un archivo de entrada, en MB (mínimo 1). | `25` |
@@ -61,14 +61,17 @@ uv run convertitodo-mcp
 # equivalente: uv run python -m convertitodo_mcp
 ```
 
-**HTTP** (red local):
+**HTTP** (red local). El token Bearer es obligatorio: genéralo, expórtalo y arranca.
 
 ```bash
+export CONVERTITODO_MCP_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
 uv run convertitodo-mcp --transporte http --host 127.0.0.1 --puerto 8765
 ```
 
-La protección por token Bearer llega en T009. Hasta entonces el transporte HTTP solo debe usarse
-en `127.0.0.1`: no lo expongas en otra interfaz de red.
+Cada petición al endpoint `/mcp` debe llevar la cabecera `Authorization: Bearer <token>`; sin ella
+o con un token distinto el servidor responde `401`. Sin `CONVERTITODO_MCP_TOKEN` el transporte HTTP
+no arranca (sale con código 2 y explica cómo generarlo), sea cual sea el host. Si además el host es
+`0.0.0.0` o `::`, nunca se expone a la red sin token. El transporte stdio no necesita token.
 
 Ejemplo mínimo de configuración de un cliente MCP por stdio (en OpenCode, `opencode.json`):
 

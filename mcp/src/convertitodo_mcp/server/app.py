@@ -9,6 +9,7 @@ from mcp.types import ToolAnnotations
 
 from convertitodo_mcp import __version__
 from convertitodo_mcp.errores import herramienta_segura
+from convertitodo_mcp.server.auth import crear_verificador
 from convertitodo_mcp.server.config import Configuracion
 
 NOMBRE_SERVIDOR = "ConvertiTodo"
@@ -39,6 +40,7 @@ def crear_servidor(config: Configuracion) -> FastMCP:
         INSTRUCCIONES,
         version=__version__,
         mask_error_details=True,
+        auth=crear_verificador(config),
     )
     servidor.tool(
         ping,
