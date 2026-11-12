@@ -4,9 +4,9 @@ Servidor MCP en Python para que un modelo local (llama-server, OpenCode) pueda *
 Excel** a partir de Markdown o bloques estructurados, **leer documentos** y **convertir entre
 formatos**. Corre en la máquina del usuario o en su red local.
 
-> **Estado actual: solo setup (fase 1).** Hoy existe el andamiaje del proyecto (dependencias,
-> lint, tipos y CI). **El servidor todavía no existe**: llega en la fase 2 (#105), junto con la
-> configuración por variables de entorno. Hoja de ruta completa: issues #104 a #113.
+> **Estado actual: servidor mínimo (fase 2, en curso).** Hoy el servidor arranca por stdio y por
+> HTTP y ofrece la herramienta `ping`. Todavía no crea, lee ni convierte documentos, y la
+> protección por token llega en T009. Hoja de ruta completa: issues #104 a #113.
 
 ---
 
@@ -46,28 +46,51 @@ exista (por ejemplo un error de tipeo) hace que el servidor no arranque y expliq
 | `CONVERTITODO_MCP_MAX_BLOQUES` | Máximo de bloques por documento (mínimo 1). | `2000` |
 | `CONVERTITODO_MCP_MAX_FILAS` | Máximo de filas por hoja (mínimo 1). | `10000` |
 
----|---|---|
-| `CONVERTITODO_MCP_HOST` | Dirección en la que escucha el transporte HTTP. | `127.0.0.1` |
-| `CONVERTITODO_MCP_PORT` | Puerto del transporte HTTP. | `8765` |
-| `CONVERTITODO_MCP_TOKEN` | Token Bearer que deben enviar los clientes HTTP. | Sin valor. Obligatorio para HTTP; el servidor no arranca en `0.0.0.0` sin token. |
-| `CONVERTITODO_MCP_WORKDIR` | Carpeta de trabajo, con `uploads/` (entradas) y `outputs/` (resultados). | A definir en la fase 2 |
-| `CONVERTITODO_MCP_TTL_MINUTOS` | Minutos tras los cuales se borran automáticamente los archivos viejos. | A definir en la fase 2 |
-| `CONVERTITODO_MCP_MAX_MB` | Tamaño máximo de un archivo de entrada. | A definir en la fase 2 |
-| `CONVERTITODO_MCP_TIMEOUT_S` | Timeout, en segundos, por herramienta. | A definir en la fase 2 |
-
 ---
 
 ## Cómo arrancarlo
 
-**Hoy no hay nada que arrancar.** El punto de entrada se agrega en la fase 2 (#105). La idea es
-que el servidor ofrezca dos transportes:
+Desde `mcp/`, después de `uv sync`. Los argumentos `--transporte`, `--host` y `--puerto` pisan a
+las variables de entorno; `--version` muestra la versión.
 
-- **HTTP**, para usarlo desde otra máquina de la red local. Exige el token Bearer
-  (`CONVERTITODO_MCP_TOKEN`) y por defecto escucha solo en `127.0.0.1`.
-- **stdio**, para clientes que lo lanzan como proceso hijo en la misma máquina, como OpenCode.
+**stdio** (el cliente lo lanza como proceso hijo, por ejemplo OpenCode en la misma máquina). Es el
+transporte por defecto y por stdout solo circula el protocolo:
 
-Cuando exista el comando de arranque, se documentará acá con un ejemplo de configuración para
-cada cliente.
+```bash
+uv run convertitodo-mcp
+# equivalente: uv run python -m convertitodo_mcp
+```
+
+**HTTP** (red local):
+
+```bash
+uv run convertitodo-mcp --transporte http --host 127.0.0.1 --puerto 8765
+```
+
+La protección por token Bearer llega en T009. Hasta entonces el transporte HTTP solo debe usarse
+en `127.0.0.1`: no lo expongas en otra interfaz de red.
+
+Ejemplo mínimo de configuración de un cliente MCP por stdio (en OpenCode, `opencode.json`):
+
+```json
+{
+  "mcp": {
+    "convertitodo": {
+      "type": "local",
+      "command": ["uv", "run", "--directory", "/ruta/a/All-Converter/mcp", "convertitodo-mcp"],
+      "enabled": true
+    }
+  }
+}
+```
+
+Si hay un error de configuración, el servidor lo explica en stderr y termina con código 2.
+
+### Herramientas
+
+| Herramienta | Qué hace |
+|---|---|
+| `ping` | Sin argumentos. Comprueba que el servidor responde y devuelve `estado` (`ok`), `servidor`, `version` y `hora` (ISO 8601, UTC). Es de solo lectura. |
 
 ---
 
