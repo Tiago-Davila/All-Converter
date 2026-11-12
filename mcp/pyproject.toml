@@ -16,9 +16,50 @@ dependencies = [
     "pillow==13.0.0",
 ]
 
+[dependency-groups]
+dev = [
+    "ruff==0.17.4",
+    "mypy==2.4.1",
+    "pytest==9.2.0",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/convertitodo_mcp"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "C4", "PTH", "RUF", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+# Los tests usan assert
+"tests/**" = ["S101"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+files = ["src", "tests"]
+mypy_path = "src"
+# Resuelve los módulos por paquetes explícitos (layout src + tests/ como paquete)
+explicit_package_bases = true
+warn_unreachable = true
+
+# Dependencias de runtime sin tipos publicados
+[[tool.mypy.overrides]]
+module = ["reportlab.*", "openpyxl.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+xfail_strict = true
