@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 from pydantic import SecretStr
+from pypdf import PdfReader
 from starlette.testclient import TestClient
 
 from convertitodo_mcp import __version__
@@ -179,3 +182,119 @@ async def test_crear_pdf_rechaza_contenido_vacio(
     async with Client(crear_servidor(_config(tmp_path))) as cliente:
         with pytest.raises(ToolError, match="contenido del documento está vacío"):
             await cliente.call_tool("crear_pdf", {"titulo": "Informe", **contenido})
+
+
+@pytest.mark.anyio
+async def test_crear_pdf_bloques_imagen_subida_y_descarga(
+    tmp_path: Path, fixture_bytes: Callable[[str], bytes]
+) -> None:
+    token = "token-de-prueba-1234567890"  # noqa: S105
+    config = Configuracion(carpeta_trabajo=tmp_path, transporte="http", token=SecretStr(token))
+    servidor = crear_servidor(config)
+    cabeceras = {"Authorization": f"Bearer {token}"}
+    with TestClient(servidor.http_app()) as http:
+        subida = http.post(
+            "/files?nombre=sample.png", content=fixture_bytes("sample.png"), headers=cabeceras
+        )
+        assert subida.status_code == 201
+        identificador = subida.json()["id"]
+        async with Client(servidor) as cliente:
+            resultado = await cliente.call_tool(
+                "crear_pdf",
+                {
+                    "titulo": "Con imagen",
+                    "bloques": [
+                        {"tipo": "parrafo", "texto": "Foto local"},
+                        {"tipo": "imagen", "archivo": identificador},
+                    ],
+                },
+            )
+        assert resultado.structured_content is not None
+        respuesta = http.get(str(resultado.structured_content["url"]), headers=cabeceras)
+        assert respuesta.status_code == 200
+    pdf = PdfReader(BytesIO(respuesta.content))
+    assert "Foto local" in pdf.pages[0].extract_text()
+    assert pdf.pages[0].images
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "argumentos",
+    [
+        {"titulo": "X" * (1024 * 1024), "markdown": "texto"},
+        {"titulo": "Informe", "bloques": [{"tipo": "tabla", "filas": [["a"], ["b"]]}]},
+    ],
+)
+async def test_crear_pdf_rechaza_limites_texto_y_filas(
+    tmp_path: Path, argumentos: dict[str, object]
+) -> None:
+    config = Configuracion(carpeta_trabajo=tmp_path, max_mb=1, max_filas=1)
+    async with Client(crear_servidor(config)) as cliente:
+        with pytest.raises(ToolError, match="máximo permitido"):
+            await cliente.call_tool("crear_pdf", argumentos)
+    assert not list((tmp_path / "outputs").rglob("*.pdf"))
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "argumentos",
+    [
+        {"titulo": "Informe", "markdown": "hola", "opciones": {"tamano": "A3"}},
+        {"titulo": "Informe", "bloques": [{"tipo": "imagen", "archivo": "../../secreto"}]},
+        {"titulo": "Informe", "bloques": [{"tipo": "imagen", "archivo": "A" * 22}]},
+    ],
+)
+async def test_crear_pdf_rechaza_opciones_e_id_invalidos(
+    tmp_path: Path, argumentos: dict[str, object]
+) -> None:
+    async with Client(crear_servidor(_config(tmp_path))) as cliente:
+        with pytest.raises(ToolError) as info:
+            await cliente.call_tool("crear_pdf", argumentos)
+    assert str(tmp_path) not in str(info.value)
+    assert "Traceback" not in str(info.value)
+
+
+@pytest.mark.anyio
+async def test_timeout_no_guarda_salida_tardia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+
+    import anyio
+
+    from convertitodo_mcp.blocks import Bloque
+    from convertitodo_mcp.limites import ejecutar_con_limite
+    from convertitodo_mcp.render.pdf import OpcionesPDF, renderizar_pdf
+    from convertitodo_mcp.server import pdf as herramienta_pdf
+    from convertitodo_mcp.storage import Almacen
+
+    liberar = threading.Event()
+    terminado = threading.Event()
+
+    def render_lento(
+        bloques: Sequence[Bloque],
+        opciones: OpcionesPDF | None = None,
+        *,
+        almacen: Almacen | None = None,
+        config: Configuracion | None = None,
+    ) -> bytes:
+        liberar.wait(3)
+        try:
+            return renderizar_pdf(bloques, opciones, almacen=almacen, config=config)
+        finally:
+            terminado.set()
+
+    async def limite_corto[R](funcion: Callable[[], R], segundos: float, *, que: str) -> R:
+        return await ejecutar_con_limite(funcion, 0.05, que=que)
+
+    monkeypatch.setattr(herramienta_pdf, "renderizar_pdf", render_lento)
+    monkeypatch.setattr(herramienta_pdf, "ejecutar_con_limite", limite_corto)
+    config = _config(tmp_path)
+    async with Client(crear_servidor(config)) as cliente:
+        try:
+            with pytest.raises(ToolError, match="tardó más"):
+                await cliente.call_tool("crear_pdf", {"titulo": "Lento", "markdown": "Texto"})
+        finally:
+            liberar.set()
+        assert await anyio.to_thread.run_sync(terminado.wait, 3)
+    assert not list((config.carpeta_trabajo / "outputs").rglob("*.pdf"))

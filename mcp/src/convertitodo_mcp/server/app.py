@@ -63,7 +63,11 @@ def crear_servidor(config: Configuracion) -> FastMCP:
     servidor.tool(
         crear_herramienta_pdf(almacen, config),
         name="crear_pdf",
-        description="Crea un PDF a partir de Markdown o bloques estructurados.",
+        description=(
+            "Crea un PDF local. Indicá titulo y exactamente uno de markdown o bloques; "
+            "opciones permite tamaño, orientación, márgenes en mm, metadatos y numeración. "
+            "Devuelve id, nombre, páginas y URL relativa de descarga."
+        ),
         annotations=ToolAnnotations(
             read_only_hint=False, idempotent_hint=False, open_world_hint=False
         ),

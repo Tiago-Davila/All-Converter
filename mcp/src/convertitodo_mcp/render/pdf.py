@@ -1,26 +1,23 @@
 """Renderizado de bloques de documento a PDF con Platypus."""
 
+import warnings
 from collections.abc import Sequence
 from html import escape
 from io import BytesIO
 from math import isfinite
-import warnings
 from typing import Literal, cast
 
 from PIL import Image as ImagenPIL
 from PIL import UnidentifiedImageError
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, letter, landscape
+from reportlab.lib.pagesizes import A4, landscape, letter
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen.canvas import Canvas
-from reportlab.platypus.doctemplate import LayoutError
 from reportlab.platypus import (
     Flowable,
-    Image as ImagenPDF,
     PageBreak,
     Paragraph,
     Preformatted,
@@ -28,6 +25,10 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
+from reportlab.platypus import (
+    Image as ImagenPDF,
+)
+from reportlab.platypus.doctemplate import LayoutError
 
 from convertitodo_mcp.blocks import (
     Bloque,
@@ -43,7 +44,7 @@ from convertitodo_mcp.blocks import (
 )
 from convertitodo_mcp.errores import ErrorArgumento, ErrorFormatoNoSoportado
 from convertitodo_mcp.limites import verificar_tamano
-from convertitodo_mcp.render.fuentes import MONO, NORMAL, NEGRITA, registrar_fuentes
+from convertitodo_mcp.render.fuentes import MONO, NEGRITA, NORMAL, registrar_fuentes
 from convertitodo_mcp.server.config import Configuracion
 from convertitodo_mcp.storage import Almacen
 

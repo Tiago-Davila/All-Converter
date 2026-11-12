@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from pypdf import PdfReader
 from reportlab.pdfbase.pdfmetrics import stringWidth
 
-from convertitodo_mcp.blocks import Documento, Imagen
+from convertitodo_mcp.blocks import Documento, Imagen, markdown_a_bloques
 from convertitodo_mcp.errores import (
     ErrorArchivoNoEncontrado,
     ErrorArgumento,
@@ -148,3 +148,68 @@ def test_imagen_excede_limite(tmp_path: Path, fixture_bytes: Callable[[str], byt
     config = Configuracion(carpeta_trabajo=tmp_path, max_mb=0)
     with pytest.raises(ErrorLimiteExcedido):
         renderizar_pdf([Imagen(archivo=archivo.id)], almacen=almacen, config=config)
+
+
+def test_markdown_fixture_unicode_y_formato(fixture_bytes: Callable[[str], bytes]) -> None:
+    markdown = fixture_bytes("sample.md").decode("utf-8")
+    markdown += "\n\nEspañol: ñ, áéíóú, €; **negrita**, *itálica*, `código`.\n"
+    pdf = PdfReader(BytesIO(renderizar_pdf(markdown_a_bloques(markdown))))
+    texto = "\n".join(pagina.extract_text() for pagina in pdf.pages)
+    for esperado in (
+        "Informe de ventas",
+        "Café",
+        "Chocolate",
+        "negrita",
+        "itálica",
+        "npm run ci",
+        "ñ, áéíóú, €",
+        "código",
+        "la guía interna",
+    ):
+        assert esperado in texto
+    enlaces = [
+        anotacion.get_object() for pagina in pdf.pages for anotacion in pagina.get("/Annots", [])
+    ]
+    assert any(
+        enlace.get("/A", {}).get("/URI") == "https://ejemplo.local/guia" for enlace in enlaces
+    )
+
+
+def test_tabla_500_filas_completa() -> None:
+    documento = Documento.model_validate(
+        {
+            "bloques": [
+                {
+                    "tipo": "tabla",
+                    "encabezado": ["Código único", "Valor"],
+                    "filas": [[f"FILA-{i:03d}-FIN", f"VALOR-{i:03d}-FIN"] for i in range(500)],
+                }
+            ]
+        }
+    )
+    pdf = PdfReader(BytesIO(renderizar_pdf(documento.bloques)))
+    textos = [pagina.extract_text() for pagina in pdf.pages]
+    assert len(textos) > 1
+    assert all("Código único" in texto for texto in textos)
+    texto = "\n".join(textos)
+    for i in range(500):
+        assert texto.count(f"FILA-{i:03d}-FIN") == 1
+        assert texto.count(f"VALOR-{i:03d}-FIN") == 1
+
+
+def test_elemento_que_no_cabe_da_error_seguro() -> None:
+    secreto = "CONTENIDO_PRIVADO"
+    documento = Documento.model_validate(
+        {
+            "bloques": [
+                {
+                    "tipo": "tabla",
+                    "filas": [[(secreto + "\n") * 1000]],
+                }
+            ]
+        }
+    )
+    with pytest.raises(ErrorArgumento) as info:
+        renderizar_pdf(documento.bloques)
+    assert "no cabe" in str(info.value)
+    assert secreto not in str(info.value)
