@@ -105,8 +105,6 @@ def _docx(datos: bytes, config: Configuracion) -> list[str]:
                 verificar_tamano(tamano + bytes_tabla, config, que="el texto extraído")
                 filas.append(valores)
             texto = _tabla(filas)
-        else:
-            continue
         tamano += len(texto.encode("utf-8")) + 2
         verificar_tamano(tamano, config, que="el texto extraído")
         if texto:

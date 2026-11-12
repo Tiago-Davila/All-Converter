@@ -18,7 +18,7 @@ from markitdown.converters import (
     PptxConverter,
     XlsxConverter,
 )
-from openpyxl.utils.cell import coordinate_from_string, column_index_from_string
+from openpyxl.utils.cell import column_index_from_string, coordinate_from_string
 from pypdf import PdfWriter
 
 from convertitodo_mcp.errores import ErrorArgumento, ErrorFormatoNoSoportado, ErrorLimiteExcedido
@@ -60,8 +60,7 @@ def _convertir(entrada: EntradaDocumento, datos: bytes) -> str:
 def _preflight_csv(datos: bytes, config: Configuracion) -> None:
     filas = 0
     columnas = 0
-    for fila in csv.reader(StringIO(datos.decode("utf-8-sig"), newline="")):
-        filas += 1
+    for filas, fila in enumerate(csv.reader(StringIO(datos.decode("utf-8-sig"), newline="")), 1):
         columnas = max(columnas, len(fila))
         verificar_filas(filas, config, que="el CSV")
         verificar_tamano(filas * columnas * 8, config, que="el CSV expandido")
@@ -129,7 +128,7 @@ def _separar_hojas(texto: str, hojas: list[str]) -> list[str]:
         raise ValueError("Orden ambiguo de hojas")
     return [
         texto[inicio:fin].strip()
-        for inicio, fin in zip(posiciones, posiciones[1:] + [len(texto)], strict=True)
+        for inicio, fin in zip(posiciones, [*posiciones[1:], len(texto)], strict=True)
     ]
 
 

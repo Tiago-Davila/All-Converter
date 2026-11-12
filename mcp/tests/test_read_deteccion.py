@@ -49,7 +49,9 @@ def test_detecta_pptx_y_html() -> None:
         {"ppt/evil.xml": b'<!DOCTYPE x [<!ENTITY a "x">]><x>&a;</x>'},
         {"ppt/vbaProject.bin": b"macro"},
         {
-            "ppt/_rels/presentation.xml.rels": b'<Relationships><Relationship TargetMode="External"/></Relationships>'
+            "ppt/_rels/presentation.xml.rels": (
+                b'<Relationships><Relationship TargetMode="External"/></Relationships>'
+            )
         },
         {"../evil.xml": b"<x/>"},
     ],
