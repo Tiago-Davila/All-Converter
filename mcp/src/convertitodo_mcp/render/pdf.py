@@ -3,8 +3,12 @@
 from collections.abc import Sequence
 from html import escape
 from io import BytesIO
+from math import isfinite
+import warnings
 from typing import Literal, cast
 
+from PIL import Image as ImagenPIL
+from PIL import UnidentifiedImageError
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from reportlab.lib import colors
@@ -15,6 +19,7 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.platypus import (
     Flowable,
+    Image as ImagenPDF,
     PageBreak,
     Paragraph,
     Preformatted,
@@ -35,7 +40,11 @@ from convertitodo_mcp.blocks import (
     Titulo,
     Tramo,
 )
+from convertitodo_mcp.errores import ErrorArgumento, ErrorFormatoNoSoportado
+from convertitodo_mcp.limites import verificar_tamano
 from convertitodo_mcp.render.fuentes import MONO, NORMAL, NEGRITA, registrar_fuentes
+from convertitodo_mcp.server.config import Configuracion
+from convertitodo_mcp.storage import Almacen
 
 
 class MargenesPDF(BaseModel):
@@ -93,6 +102,40 @@ def _ajustar_codigo(texto: str, ancho: float) -> str:
     return "\n".join(lineas)
 
 
+def _imagen_pdf(
+    bloque: Imagen, almacen: Almacen, config: Configuracion, ancho: float, alto: float
+) -> ImagenPDF:
+    if bloque.ancho_mm is not None and not isfinite(bloque.ancho_mm):
+        raise ErrorArgumento("El ancho de la imagen no es finito.", "indicá un ancho válido en mm.")
+    archivo = almacen.obtener(bloque.archivo)
+    verificar_tamano(archivo.tamano, config, que="la imagen")
+    with archivo.ruta.open("rb") as entrada:
+        datos = entrada.read(config.max_bytes + 1)
+    verificar_tamano(len(datos), config, que="la imagen")
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ImagenPIL.DecompressionBombWarning)
+            with ImagenPIL.open(BytesIO(datos)) as imagen:
+                imagen.verify()
+            with ImagenPIL.open(BytesIO(datos)) as imagen:
+                imagen.load()
+                ancho_px, alto_px = imagen.size
+    except (
+        UnidentifiedImageError,
+        OSError,
+        ValueError,
+        ImagenPIL.DecompressionBombError,
+        ImagenPIL.DecompressionBombWarning,
+    ):
+        raise ErrorFormatoNoSoportado(
+            "La imagen no es válida o es demasiado grande para procesarla.",
+            "subí una imagen válida con dimensiones menores.",
+        ) from None
+    ancho_deseado = bloque.ancho_mm * mm if bloque.ancho_mm is not None else float(ancho_px)
+    factor = min(ancho_deseado / ancho_px, ancho / ancho_px, alto / alto_px)
+    return ImagenPDF(BytesIO(datos), width=ancho_px * factor, height=alto_px * factor)
+
+
 def _texto(tramos: Sequence[Tramo]) -> str:
     partes = []
     for tramo in tramos:
@@ -120,7 +163,13 @@ def _lista(lista: Lista, base: ParagraphStyle, nivel: int = 0) -> list[Flowable]
     return elementos
 
 
-def renderizar_pdf(bloques: Sequence[Bloque], opciones: OpcionesPDF | None = None) -> bytes:
+def renderizar_pdf(
+    bloques: Sequence[Bloque],
+    opciones: OpcionesPDF | None = None,
+    *,
+    almacen: Almacen | None = None,
+    config: Configuracion | None = None,
+) -> bytes:
     """Devuelve un PDF en memoria a partir de los bloques indicados."""
     registrar_fuentes()
     opciones = opciones or OpcionesPDF()
@@ -188,7 +237,14 @@ def renderizar_pdf(bloques: Sequence[Bloque], opciones: OpcionesPDF | None = Non
         elif isinstance(bloque, SaltoPagina):
             contenido.append(PageBreak())
         elif isinstance(bloque, Imagen):
-            raise ValueError("Las imágenes requieren un almacén de archivos.")
+            if almacen is None or config is None:
+                raise ErrorArgumento(
+                    "No se configuró un almacén para cargar la imagen.",
+                    "configurá el almacén y volvé a intentar.",
+                )
+            contenido.append(
+                _imagen_pdf(bloque, almacen, config, documento.width - 12, documento.height - 12)
+            )
 
     def pie(lienzo: Canvas, doc: SimpleDocTemplate) -> None:
         if opciones.numerar_paginas:

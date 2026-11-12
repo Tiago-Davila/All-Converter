@@ -1,15 +1,25 @@
 """Pruebas del renderizador PDF."""
 
+from collections.abc import Callable
 from io import BytesIO
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 from pypdf import PdfReader
 from reportlab.pdfbase.pdfmetrics import stringWidth
 
-from convertitodo_mcp.blocks import Documento
+from convertitodo_mcp.blocks import Documento, Imagen
+from convertitodo_mcp.errores import (
+    ErrorArchivoNoEncontrado,
+    ErrorArgumento,
+    ErrorFormatoNoSoportado,
+    ErrorLimiteExcedido,
+)
 from convertitodo_mcp.render.fuentes import MONO, registrar_fuentes
-from convertitodo_mcp.render.pdf import OpcionesPDF, _ajustar_codigo, renderizar_pdf
+from convertitodo_mcp.render.pdf import OpcionesPDF, _ajustar_codigo, _imagen_pdf, renderizar_pdf
+from convertitodo_mcp.server.config import Configuracion
+from convertitodo_mcp.storage import Almacen
 
 
 def test_renderizar_bloques_basicos() -> None:
@@ -99,3 +109,42 @@ def test_codigo_largo_se_ajusta_sin_perder_caracteres() -> None:
 def test_numeracion_requiere_margen_inferior() -> None:
     with pytest.raises(ValidationError, match="margen inferior de al menos 10 mm"):
         OpcionesPDF.model_validate({"numerar_paginas": True, "margenes": {"inferior": 9}})
+
+
+def test_imagen_de_almacen_se_incrusta_y_escala(
+    tmp_path: Path, fixture_bytes: Callable[[str], bytes]
+) -> None:
+    almacen = Almacen(tmp_path)
+    archivo = almacen.guardar_subida("sample.png", fixture_bytes("sample.png"))
+    config = Configuracion(carpeta_trabajo=tmp_path)
+    bloque = Imagen(archivo=archivo.id, ancho_mm=1000)
+    imagen = _imagen_pdf(bloque, almacen, config, 100, 40)
+    assert imagen.drawWidth <= 100
+    assert imagen.drawHeight <= 40
+    assert imagen.drawWidth / imagen.drawHeight == pytest.approx(
+        imagen.imageWidth / imagen.imageHeight
+    )
+    pdf = PdfReader(BytesIO(renderizar_pdf([bloque], almacen=almacen, config=config)))
+    assert pdf.pages[0].images
+
+
+def test_imagen_invalida_o_inexistente(tmp_path: Path) -> None:
+    almacen = Almacen(tmp_path)
+    config = Configuracion(carpeta_trabajo=tmp_path)
+    archivo = almacen.guardar_subida("invalida.png", b"no es una imagen")
+    with pytest.raises(ErrorFormatoNoSoportado):
+        renderizar_pdf([Imagen(archivo=archivo.id)], almacen=almacen, config=config)
+    with pytest.raises(ErrorArchivoNoEncontrado):
+        renderizar_pdf([Imagen(archivo="A" * 22)], almacen=almacen, config=config)
+    with pytest.raises(ErrorArgumento):
+        renderizar_pdf(
+            [Imagen(archivo=archivo.id, ancho_mm=float("inf"))], almacen=almacen, config=config
+        )
+
+
+def test_imagen_excede_limite(tmp_path: Path, fixture_bytes: Callable[[str], bytes]) -> None:
+    almacen = Almacen(tmp_path)
+    archivo = almacen.guardar_subida("sample.png", fixture_bytes("sample.png"))
+    config = Configuracion(carpeta_trabajo=tmp_path, max_mb=0)
+    with pytest.raises(ErrorLimiteExcedido):
+        renderizar_pdf([Imagen(archivo=archivo.id)], almacen=almacen, config=config)
