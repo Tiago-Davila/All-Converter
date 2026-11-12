@@ -65,6 +65,7 @@ def _validar_paquete(datos: bytes, config: Configuracion) -> None:
             nombres = [miembro.filename for miembro in miembros]
             if len(nombres) != len(set(nombres)):
                 raise ValueError
+            extensiones = {PurePath(nombre).suffix.lower().lstrip(".") for nombre in nombres}
             verificar_tamano(
                 sum(miembro.file_size for miembro in miembros),
                 config,
@@ -94,8 +95,15 @@ def _validar_paquete(datos: bytes, config: Configuracion) -> None:
                 except Exception:
                     raise ValueError from None
                 if nombre == "[content_types].xml":
-                    tipos = " ".join(elemento.get("ContentType", "").lower() for elemento in raiz)
-                    if any(tipo in tipos for tipo in ("macroenabled", "vba", "oleobject")):
+                    for elemento in raiz:
+                        tipo = elemento.get("ContentType", "").lower()
+                        if not any(m in tipo for m in ("macroenabled", "vba", "oleobject")):
+                            continue
+                        # Un tipo por defecto (por ejemplo .bin en archivos de SheetJS) solo es
+                        # un riesgo si el paquete tiene alguna parte con esa extensión.
+                        extension = elemento.get("Extension")
+                        if extension is not None and extension.lower() not in extensiones:
+                            continue
                         raise ValueError
                 if nombre.endswith(".rels"):
                     for elemento in raiz:

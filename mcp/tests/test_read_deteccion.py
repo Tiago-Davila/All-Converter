@@ -107,3 +107,53 @@ def test_rechaza_hipervinculo_con_esquema_activo(tmp_path: Path) -> None:
     )
     with pytest.raises(ErrorFormatoNoSoportado):
         cargar_entrada(archivo.id, almacen, Configuracion(carpeta_trabajo=tmp_path))
+
+
+def _xlsx_con_tipos(tipos: bytes, extra: dict[str, bytes]) -> bytes:
+    salida = BytesIO()
+    with ZipFile(salida, "w", ZIP_DEFLATED) as paquete:
+        paquete.writestr("[Content_Types].xml", tipos)
+        paquete.writestr("_rels/.rels", b"<Relationships/>")
+        paquete.writestr("xl/workbook.xml", b"<workbook/>")
+        for nombre, contenido in extra.items():
+            paquete.writestr(nombre, contenido)
+    return salida.getvalue()
+
+
+_MACRO = b"application/vnd.ms-excel.sheet.binary.macroEnabled.main"
+
+
+def test_acepta_tipo_macro_por_defecto_sin_partes(
+    tmp_path: Path, fixture_bytes: Callable[[str], bytes]
+) -> None:
+    almacen = Almacen(tmp_path)
+    config = Configuracion(carpeta_trabajo=tmp_path)
+    # multisheet.xlsx declara .bin como macro por defecto, pero no tiene partes .bin.
+    for datos in (
+        fixture_bytes("multisheet.xlsx"),
+        _xlsx_con_tipos(
+            b'<Types><Default Extension="bin" ContentType="' + _MACRO + b'"/></Types>', {}
+        ),
+    ):
+        archivo = almacen.guardar_subida("libro.xlsx", datos)
+        assert cargar_entrada(archivo.id, almacen, config).tipo == "xlsx"
+
+
+@pytest.mark.parametrize(
+    ("tipos", "extra"),
+    [
+        (
+            b'<Types><Default Extension="dat" ContentType="' + _MACRO + b'"/></Types>',
+            {"xl/macro.dat": b"x"},
+        ),
+        (
+            b'<Types><Override PartName="/xl/workbook.xml" ContentType="' + _MACRO + b'"/></Types>',
+            {},
+        ),
+    ],
+)
+def test_rechaza_tipos_macro_usados(tmp_path: Path, tipos: bytes, extra: dict[str, bytes]) -> None:
+    almacen = Almacen(tmp_path)
+    archivo = almacen.guardar_subida("libro.xlsx", _xlsx_con_tipos(tipos, extra))
+    with pytest.raises(ErrorFormatoNoSoportado):
+        cargar_entrada(archivo.id, almacen, Configuracion(carpeta_trabajo=tmp_path))
