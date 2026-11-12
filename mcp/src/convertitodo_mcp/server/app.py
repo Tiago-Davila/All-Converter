@@ -9,6 +9,7 @@ from mcp.types import ToolAnnotations
 
 from convertitodo_mcp import __version__
 from convertitodo_mcp.errores import herramienta_segura
+from convertitodo_mcp.server.archivos_http import registrar_rutas_de_archivos
 from convertitodo_mcp.server.auth import crear_verificador
 from convertitodo_mcp.server.config import Configuracion
 from convertitodo_mcp.storage.almacen import Almacen
@@ -46,6 +47,7 @@ def crear_servidor(config: Configuracion) -> FastMCP:
         auth=crear_verificador(config),
         lifespan=crear_ciclo_de_vida(almacen, config),
     )
+    registrar_rutas_de_archivos(servidor, almacen, config)
     servidor.tool(
         ping,
         name="ping",
