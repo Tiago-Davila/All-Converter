@@ -4,10 +4,11 @@ Servidor MCP en Python para que un modelo local (llama-server, OpenCode) pueda *
 Excel** a partir de Markdown o bloques estructurados, **leer documentos** y **convertir entre
 formatos**. Corre en la máquina del usuario o en su red local.
 
-> **Estado actual: fases 1 a 6 completas.** El servidor crea PDF, Word y Excel, edita copias de Word y Excel y
-> consulta documentos con `info_documento`, `leer_documento` y `buscar_en_documento` por stdio
-> y HTTP. Por HTTP exige un token Bearer y permite subir y descargar archivos (`POST /files`,
-> `GET /files/{id}`). Las conversiones entre formatos están pendientes.
+> **Estado actual: fases 1 a 6 completas.** El servidor crea PDF, Word y Excel, edita copias
+> de Word y Excel y consulta documentos con `info_documento`, `leer_documento` y
+> `buscar_en_documento` por stdio y HTTP. Por HTTP exige un token Bearer y permite subir y
+> descargar archivos (`POST /files`, `GET /files/{id}`). Las conversiones entre formatos están
+> pendientes.
 > Hoja de ruta completa: issues #104 a #113.
 
 ---
@@ -458,6 +459,11 @@ Este comando ejecuta un solo test con un worker y limpia su archivo de prueba te
 Comprueba el motor de conversión, sin abrir la interfaz. La conversión web tiene fidelidad
 parcial: no conserva el diseño exacto ni todos los niveles de listas anidadas. No reemplaza
 una revisión nativa del documento en Word.
+
+Los tests de Excel releen cada XLSX generado con openpyxl para verificar tipos, formatos y
+fórmulas. Si `soffice` (LibreOffice) está instalado, además lo recalculan en modo headless con un
+perfil temporal y comprueban los valores de las fórmulas; sin LibreOffice esos tests se omiten,
+como en la CI.
 
 Los tests reutilizan los fixtures reales de la app web (`all-converter/tests/fixtures/`), así que
 el MCP y la app se prueban contra los mismos archivos. La CI corre estos mismos comandos en
