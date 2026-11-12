@@ -79,3 +79,43 @@ def test_tablas_editables_con_encabezado_repetido_y_bordes() -> None:
     assert "w:insideH" in tabla._tbl.xml
     assert "w:insideV" in tabla._tbl.xml
     assert "w:tblHeader" not in documento.tables[1].rows[0]._tr.xml
+
+
+def test_formato_en_linea_y_enlaces_en_todos_los_bloques() -> None:
+    tramos = [
+        {"texto": "Inicio ", "negrita": True},
+        {
+            "texto": "enlace",
+            "italica": True,
+            "codigo": True,
+            "enlace": "https://ejemplo.com/?a=1&b=2",
+        },
+        {"texto": " fin"},
+    ]
+    bloques = Documento.model_validate(
+        {
+            "bloques": [
+                {"tipo": "titulo", "texto": tramos},
+                {"tipo": "parrafo", "texto": tramos},
+                {"tipo": "lista", "items": [{"texto": tramos}]},
+                {"tipo": "cita", "texto": tramos},
+                {"tipo": "tabla", "encabezado": [tramos], "filas": [[tramos]]},
+            ]
+        }
+    ).bloques
+    documento = Document(BytesIO(renderizar_docx(bloques)))
+    parrafos = [
+        *documento.paragraphs,
+        documento.tables[0].cell(0, 0).paragraphs[0],
+        documento.tables[0].cell(1, 0).paragraphs[0],
+    ]
+    for parrafo in parrafos:
+        partes = list(parrafo.iter_inner_content())
+        assert [parte.text for parte in partes] == ["Inicio ", "enlace", " fin"]
+        assert parrafo.runs[0].bold is True
+        enlace = parrafo.hyperlinks[0]
+        assert enlace.address == "https://ejemplo.com/?a=1&b=2"
+        assert enlace.runs[0].italic is True
+        assert enlace.runs[0].font.name == "Noto Sans Mono"
+    assert parrafos[-2].hyperlinks[0].runs[0].bold is True
+    assert parrafos[-2].runs[-1].bold is True
