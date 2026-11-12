@@ -464,6 +464,7 @@ name = "convertitodo-mcp"
 version = "0.0.0"
 source = { editable = "." }
 dependencies = [
+    { name = "anyio" },
     { name = "fastmcp" },
     { name = "markdown-it-py" },
     { name = "markitdown", extra = ["docx", "pdf", "pptx", "xlsx"] },
@@ -485,6 +486,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anyio", specifier = "==4.16.0" },
     { name = "fastmcp", specifier = "==4.1.8" },
     { name = "markdown-it-py", specifier = "==4.3.0" },
     { name = "markitdown", extras = ["pdf", "docx", "xlsx", "pptx"], specifier = "==0.1.9" },

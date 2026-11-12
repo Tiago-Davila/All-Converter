@@ -23,7 +23,7 @@ Las dependencias están fijadas en `pyproject.toml` y `uv.lock`.
 
 | Uso | Paquetes |
 |---|---|
-| Ejecución | fastmcp, pydantic, reportlab, pypdf, python-docx, openpyxl, markitdown, pypdfium2, pillow, markdown-it-py |
+| Ejecución | anyio, fastmcp, pydantic, reportlab, pypdf, python-docx, openpyxl, markitdown, pypdfium2, pillow, markdown-it-py |
 | Desarrollo | ruff, mypy (estricto), pytest |
 
 ---
@@ -91,6 +91,25 @@ Si hay un error de configuración, el servidor lo explica en stderr y termina co
 | Herramienta | Qué hace |
 |---|---|
 | `ping` | Sin argumentos. Comprueba que el servidor responde y devuelve `estado` (`ok`), `servidor`, `version` y `hora` (ISO 8601, UTC). Es de solo lectura. |
+
+---
+
+## Límites
+
+Para que una llamada no agote la máquina, el servidor rechaza antes de procesar. Todos los
+topes se ajustan con variables de entorno (ver la tabla de arriba):
+
+- **Tamaño de entrada**: archivos y textos (medidos en bytes UTF-8) por encima de
+  `CONVERTITODO_MCP_MAX_MB`.
+- **Bloques por documento**: `CONVERTITODO_MCP_MAX_BLOQUES`. Cuentan los items de lista (también
+  los de sublistas) y las filas de tabla, no solo los bloques de primer nivel.
+- **Filas**: `CONVERTITODO_MCP_MAX_FILAS` limita las filas de las tablas de un documento y las de
+  cada hoja de una planilla.
+- **Tiempo**: `CONVERTITODO_MCP_TIMEOUT_S` es el máximo de segundos por herramienta.
+
+Al superar un tope, la herramienta devuelve un error en español que indica cuánto llegó, cuál es
+el máximo y cómo corregirlo (achicar o dividir el documento, o subir la variable). Si vence el
+tiempo, la llamada se cancela con un error de tiempo agotado.
 
 ---
 

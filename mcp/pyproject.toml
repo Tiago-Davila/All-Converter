@@ -5,6 +5,7 @@ description = "Servidor MCP de ConvertiTodo para crear, leer y convertir documen
 requires-python = ">=3.12"
 # Dependencias de runtime fijadas a versiones exactas
 dependencies = [
+    "anyio==4.16.0",
     "fastmcp==4.1.8",
     "pydantic==2.14.3",
     "reportlab==5.1.0",
