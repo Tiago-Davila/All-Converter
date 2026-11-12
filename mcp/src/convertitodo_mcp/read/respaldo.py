@@ -5,17 +5,23 @@ from __future__ import annotations
 from collections.abc import Iterator
 from io import BytesIO
 from typing import Protocol, cast
+from zipfile import ZipFile
 
 from docx import Document
+from docx.oxml import parse_xml
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 from openpyxl import load_workbook
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 
-from convertitodo_mcp.errores import ErrorArgumento, ErrorFormatoNoSoportado
+from convertitodo_mcp.errores import (
+    ErrorArgumento,
+    ErrorFormatoNoSoportado,
+    ErrorLimiteExcedido,
+)
 from convertitodo_mcp.limites import verificar_filas, verificar_tamano
-from convertitodo_mcp.read.modelos import DocumentoLeido, EntradaDocumento
+from convertitodo_mcp.read.modelos import DocumentoLeido, EntradaDocumento, MetadatosDocumento
 from convertitodo_mcp.server.config import Configuracion
 
 
@@ -141,3 +147,35 @@ def leer_respaldo(entrada: EntradaDocumento, config: Configuracion) -> Documento
     raise ErrorFormatoNoSoportado(
         "No hay lector de respaldo para este formato.", "usá un formato compatible."
     )
+
+
+def info_basica(entrada: EntradaDocumento, config: Configuracion) -> MetadatosDocumento:
+    """Cuenta unidades físicas o enumera hojas sin extraer su contenido."""
+    paginas: int | None = None
+    hojas: list[str] = []
+    if entrada.tipo == "pdf":
+        paginas = len(abrir_pdf(entrada.datos).pages)
+    elif entrada.tipo == "xlsx":
+        libro = cast(
+            "_Libro",
+            load_workbook(BytesIO(entrada.datos), read_only=True, data_only=True, keep_links=False),
+        )
+        try:
+            hojas = list(libro.sheetnames)
+        finally:
+            libro.close()
+    elif entrada.tipo == "pptx":
+        with ZipFile(BytesIO(entrada.datos)) as paquete:
+            presentacion = parse_xml(paquete.read("ppt/presentation.xml"))
+        paginas = len(
+            presentacion.findall(
+                "{http://schemas.openxmlformats.org/presentationml/2006/main}sldIdLst/"
+                "{http://schemas.openxmlformats.org/presentationml/2006/main}sldId"
+            )
+        )
+    if (paginas if paginas is not None else len(hojas)) > config.max_bloques:
+        raise ErrorLimiteExcedido(
+            f"El documento supera el máximo de {config.max_bloques} unidades.",
+            "dividí el documento en archivos más pequeños.",
+        )
+    return MetadatosDocumento(paginas=paginas, hojas=hojas)

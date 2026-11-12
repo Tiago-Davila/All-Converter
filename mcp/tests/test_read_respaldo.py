@@ -37,3 +37,52 @@ def test_xlsx_limita_filas(fixture_bytes: Callable[[str], bytes], tmp_path: Path
     entrada = EntradaDocumento("hojas.xlsx", "xlsx", fixture_bytes("multisheet.xlsx"))
     with pytest.raises(ErrorLimiteExcedido):
         leer_respaldo(entrada, Configuracion(carpeta_trabajo=tmp_path, max_filas=1))
+
+
+def test_info_pdf_no_extrae_texto(
+    fixture_bytes: Callable[[str], bytes], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pypdf import PageObject
+
+    from convertitodo_mcp.read.respaldo import info_basica
+
+    def prohibido(*args: object, **kwargs: object) -> str:
+        raise AssertionError("No debe extraer texto")
+
+    monkeypatch.setattr(PageObject, "extract_text", prohibido)
+    entrada = EntradaDocumento("texto.pdf", "pdf", fixture_bytes("text.pdf"))
+    assert info_basica(entrada, Configuracion(carpeta_trabajo=tmp_path)).paginas
+
+
+def test_info_xlsx_no_iterar_filas(
+    fixture_bytes: Callable[[str], bytes], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from openpyxl.worksheet._read_only import ReadOnlyWorksheet
+
+    from convertitodo_mcp.read.respaldo import info_basica
+
+    def prohibido(*args: object, **kwargs: object) -> None:
+        raise AssertionError("No debe recorrer filas")
+
+    monkeypatch.setattr(ReadOnlyWorksheet, "iter_rows", prohibido)
+    entrada = EntradaDocumento("hojas.xlsx", "xlsx", fixture_bytes("multisheet.xlsx"))
+    assert len(info_basica(entrada, Configuracion(carpeta_trabajo=tmp_path)).hojas) > 1
+
+
+def test_info_pptx_cuenta_diapositivas(tmp_path: Path) -> None:
+    from io import BytesIO
+    from zipfile import ZipFile
+
+    from convertitodo_mcp.read.respaldo import info_basica
+
+    datos = BytesIO()
+    with ZipFile(datos, "w") as paquete:
+        paquete.writestr(
+            "ppt/presentation.xml",
+            '<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">'
+            '<p:sldIdLst><p:sldId id="1"/><p:sldId id="2"/></p:sldIdLst></p:presentation>',
+        )
+    entrada = EntradaDocumento("diapositivas.pptx", "pptx", datos.getvalue())
+    assert info_basica(entrada, Configuracion(carpeta_trabajo=tmp_path)).paginas == 2
+    with pytest.raises(ErrorLimiteExcedido):
+        info_basica(entrada, Configuracion(carpeta_trabajo=tmp_path, max_bloques=1))
