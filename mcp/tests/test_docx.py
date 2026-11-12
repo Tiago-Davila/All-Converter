@@ -53,3 +53,29 @@ def test_agregar_bloques_conserva_contenido_existente() -> None:
     bloques = Documento.model_validate({"bloques": [{"tipo": "parrafo", "texto": "Nuevo"}]}).bloques
     agregar_bloques(documento, bloques)
     assert [p.text for p in documento.paragraphs] == ["Existente", "Nuevo"]
+
+
+def test_tablas_editables_con_encabezado_repetido_y_bordes() -> None:
+    bloques = Documento.model_validate(
+        {
+            "bloques": [
+                {"tipo": "tabla", "encabezado": ["A", "B"], "filas": [["<uno>", "dos"]]},
+                {"tipo": "tabla", "filas": [["Sin encabezado"]]},
+                {"tipo": "tabla", "filas": []},
+            ]
+        }
+    ).bloques
+    documento = Document(BytesIO(renderizar_docx(bloques)))
+    assert len(documento.tables) == 2
+    tabla = documento.tables[0]
+    assert [[celda.text for celda in fila.cells] for fila in tabla.rows] == [
+        ["A", "B"],
+        ["<uno>", "dos"],
+    ]
+    assert all(celda.paragraphs[0].runs[0].bold for celda in tabla.rows[0].cells)
+    assert "w:tblHeader" in tabla.rows[0]._tr.xml
+    assert "w:tblHeader" not in tabla.rows[1]._tr.xml
+    assert "w:tblBorders" in tabla._tbl.xml
+    assert "w:insideH" in tabla._tbl.xml
+    assert "w:insideV" in tabla._tbl.xml
+    assert "w:tblHeader" not in documento.tables[1].rows[0]._tr.xml
