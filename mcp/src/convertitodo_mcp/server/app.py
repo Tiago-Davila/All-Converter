@@ -19,6 +19,7 @@ from convertitodo_mcp.server.lectura import (
     crear_herramienta_leer,
 )
 from convertitodo_mcp.server.pdf import crear_herramienta_pdf
+from convertitodo_mcp.server.xlsx import crear_herramienta_xlsx
 from convertitodo_mcp.storage.almacen import Almacen
 from convertitodo_mcp.storage.limpieza import crear_ciclo_de_vida
 
@@ -97,6 +98,21 @@ def crear_servidor(config: Configuracion) -> FastMCP:
             "Edita una copia de un Word por archivo (id). operaciones admite agregar_seccion "
             "(titulo, nivel, bloques), reemplazar_texto (buscar, reemplazo literal dentro de cada "
             "párrafo) y agregar_tabla (tabla). Conserva el original; devuelve id, nombre y URL."
+        ),
+        annotations=ToolAnnotations(
+            read_only_hint=False, idempotent_hint=False, open_world_hint=False
+        ),
+    )
+    servidor.tool(
+        crear_herramienta_xlsx(almacen, config),
+        name="crear_xlsx",
+        description=(
+            "Crea un Excel local. Indicá titulo y exactamente uno de hojas, markdown (una tabla) "
+            "o csv. Cada hoja tiene nombre, columnas (nombre, tipo texto/numero/entero/moneda/"
+            "porcentaje/fecha, formato, ancho) y filas; una celda calcula solo con "
+            '{"formula": "=SUM(B2:B5)"} en inglés. Extras por hoja: fila_totales, '
+            "formato_condicional y tabla. opciones controla encabezado, paneles, autofiltro, "
+            "anchos y símbolo de moneda. Devuelve id, nombre, hojas y URL relativa."
         ),
         annotations=ToolAnnotations(
             read_only_hint=False, idempotent_hint=False, open_world_hint=False

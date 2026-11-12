@@ -41,6 +41,7 @@ async def test_ping_listada(tmp_path: Path) -> None:
         "crear_pdf",
         "crear_docx",
         "editar_docx",
+        "crear_xlsx",
         "info_documento",
         "leer_documento",
         "buscar_en_documento",

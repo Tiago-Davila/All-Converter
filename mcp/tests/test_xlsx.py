@@ -129,10 +129,11 @@ def test_error_indica_hoja_fila_y_columna(tmp_path: Path) -> None:
     assert "la hoja 'Datos', fila 2, columna 'Monto'" in str(error.value)
 
 
-def test_limite_de_filas_total(tmp_path: Path) -> None:
+def test_limite_de_filas_por_hoja(tmp_path: Path) -> None:
     hoja = {"columnas": [{"nombre": "A"}], "filas": [["x"]] * 3}
     planilla = Planilla.model_validate(
         {"hojas": [{"nombre": "Uno", **hoja}, {"nombre": "Dos", **hoja}]}
     )
-    with pytest.raises(ErrorLimiteExcedido, match="6 filas"):
-        renderizar_xlsx(planilla, _config(tmp_path, max_filas=5))
+    renderizar_xlsx(planilla, _config(tmp_path, max_filas=3))
+    with pytest.raises(ErrorLimiteExcedido, match="La hoja 'Uno' tiene 3 filas"):
+        renderizar_xlsx(planilla, _config(tmp_path, max_filas=2))

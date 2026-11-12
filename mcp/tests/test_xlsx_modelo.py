@@ -17,7 +17,7 @@ def _hoja(nombre: str = "Ventas", **extra: object) -> dict[str, object]:
 
 def test_planilla_valida_con_valores_por_defecto() -> None:
     planilla = Planilla.model_validate({"hojas": [_hoja(), _hoja("Resumen", filas=[])]})
-    assert planilla.total_filas() == 2
+    assert len(planilla.hojas[0].filas) == 2
     columna = planilla.hojas[0].columnas[0]
     assert (columna.tipo, columna.formato, columna.ancho) == ("texto", None, None)
     assert planilla.hojas[0].filas[1] == ["Té", None]

@@ -200,7 +200,3 @@ class Planilla(BaseModel):
         if len(tablas) != len(set(tablas)):
             raise ValueError("Hay tablas con el mismo nombre; cada tabla necesita un nombre único.")
         return self
-
-    # Total de filas de datos de todas las hojas, para aplicar el límite configurado.
-    def total_filas(self) -> int:
-        return sum(len(hoja.filas) for hoja in self.hojas)

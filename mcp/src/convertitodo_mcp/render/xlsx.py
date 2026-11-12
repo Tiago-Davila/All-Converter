@@ -248,7 +248,8 @@ def renderizar_xlsx(
     planilla: Planilla, config: Configuracion, opciones: OpcionesXLSX | None = None
 ) -> bytes:
     """Genera el libro completo en memoria y devuelve sus bytes."""
-    verificar_filas(planilla.total_filas(), config)
+    for hoja in planilla.hojas:
+        verificar_filas(len(hoja.filas), config, que=f"la hoja '{hoja.nombre}'")
     libro = Workbook()
     libro.remove(libro.worksheets[0])
     hojas = [hoja.nombre for hoja in planilla.hojas]
