@@ -95,6 +95,15 @@ mcp/
 
 ---
 
+## Fuentes incluidas
+
+El paquete trae las fuentes Noto Sans (normal, negrita, cursiva, negrita cursiva) y Noto Sans Mono
+en `src/convertitodo_mcp/render/fuentes/`. Se incluyen para que los PDF muestren bien la ñ, las
+tildes y el símbolo €, que las fuentes estándar de PDF no cubren. Son libres bajo la licencia SIL
+Open Font License 1.1 (texto en `OFL.txt`, misma carpeta).
+
+---
+
 ## Privacidad
 
 Los archivos se procesan en la máquina del usuario o en su red local. El MCP no los envía a
