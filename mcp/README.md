@@ -5,8 +5,9 @@ Excel** a partir de Markdown o bloques estructurados, **leer documentos** y **co
 formatos**. Corre en la máquina del usuario o en su red local.
 
 > **Estado actual: servidor mínimo (fase 2, en curso).** Hoy el servidor arranca por stdio y por
-> HTTP y ofrece la herramienta `ping`. Por HTTP exige un token Bearer. Todavía no crea, lee ni
-> convierte documentos. Hoja de ruta completa: issues #104 a #113.
+> HTTP y ofrece la herramienta `ping`. Por HTTP exige un token Bearer y permite subir y descargar
+> archivos (`POST /files`, `GET /files/{id}`). Todavía no crea, lee ni convierte
+> documentos. Hoja de ruta completa: issues #104 a #113.
 
 ---
 
@@ -23,7 +24,7 @@ Las dependencias están fijadas en `pyproject.toml` y `uv.lock`.
 
 | Uso | Paquetes |
 |---|---|
-| Ejecución | anyio, fastmcp, pydantic, reportlab, pypdf, python-docx, openpyxl, markitdown, pypdfium2, pillow, markdown-it-py |
+| Ejecución | anyio, fastmcp, pydantic, reportlab, pypdf, python-docx, openpyxl, markitdown, pypdfium2, pillow, markdown-it-py, python-multipart |
 | Desarrollo | ruff, mypy (estricto), pytest |
 
 ---
@@ -94,6 +95,58 @@ Si hay un error de configuración, el servidor lo explica en stderr y termina co
 | Herramienta | Qué hace |
 |---|---|
 | `ping` | Sin argumentos. Comprueba que el servidor responde y devuelve `estado` (`ok`), `servidor`, `version` y `hora` (ISO 8601, UTC). Es de solo lectura. |
+
+---
+
+## Subir y descargar archivos
+
+Para que un cliente pase archivos al servidor y recupere los resultados, el transporte HTTP expone
+dos endpoints propios, además de `/mcp`. **Solo existen con el transporte HTTP**: en stdio no hay
+servidor web y no están disponibles. Ambos exigen `Authorization: Bearer <token>` y responden `401`
+sin él. No son herramientas MCP: el `id` que devuelven es el que después se pasa a las herramientas.
+
+**`POST /files`** guarda un archivo en `uploads/`. Admite dos formas:
+
+```bash
+# multipart/form-data: campo `file` (o `archivo`); el nombre sale del filename de la parte
+curl -H "Authorization: Bearer $CONVERTITODO_MCP_TOKEN" \
+  -F "file=@informe.pdf" http://127.0.0.1:8765/files
+
+# cuerpo crudo: el nombre va en ?nombre= (o ?filename=); sin nombre se usa "archivo"
+curl -H "Authorization: Bearer $CONVERTITODO_MCP_TOKEN" \
+  --data-binary @informe.pdf -H "Content-Type: application/octet-stream" \
+  "http://127.0.0.1:8765/files?nombre=informe.pdf"
+```
+
+Respuesta `201`:
+
+```json
+{"id": "Xk3...", "nombre": "informe.pdf", "tamano": 20480, "url": "/files/Xk3..."}
+```
+
+El nombre se sanea (sin rutas ni caracteres peligrosos) y el tamaño no puede superar
+`CONVERTITODO_MCP_MAX_MB`: si `Content-Length` ya lo excede se rechaza sin leer el cuerpo y, si no,
+se corta apenas lo recibido pasa el tope.
+
+**`GET /files/{id}`** descarga un archivo de `uploads/` o `outputs/` como adjunto
+(`Content-Disposition: attachment`, con el nombre en UTF-8 según RFC 5987, `Content-Type` según la
+extensión y `X-Content-Type-Options: nosniff`):
+
+```bash
+curl -H "Authorization: Bearer $CONVERTITODO_MCP_TOKEN" \
+  -OJ http://127.0.0.1:8765/files/<id>
+```
+
+**Errores.** Siempre JSON en español, `{"error": "<codigo>", "mensaje": "<qué falló y cómo corregirlo>"}`:
+
+| Estado | `error` | Cuándo |
+|---|---|---|
+| `400` | `argumento_invalido` | Archivo vacío, id con formato inválido o multipart mal formado. |
+| `401` | `no_autorizado` | Falta el token o es incorrecto. |
+| `404` | `archivo_no_encontrado` | El id no existe (o ya venció su TTL). |
+| `413` | `limite_excedido` | El archivo supera `CONVERTITODO_MCP_MAX_MB`. |
+| `415` | `formato_no_soportado` | El multipart no trae un campo de archivo `file` o `archivo`. |
+| `500` | `error` | Fallo interno; el mensaje no incluye detalles del servidor. |
 
 ---
 

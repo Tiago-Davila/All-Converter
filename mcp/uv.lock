@@ -474,6 +474,7 @@ dependencies = [
     { name = "pypdf" },
     { name = "pypdfium2" },
     { name = "python-docx" },
+    { name = "python-multipart" },
     { name = "reportlab" },
 ]
 
@@ -496,6 +497,7 @@ requires-dist = [
     { name = "pypdf", specifier = "==7.0.1" },
     { name = "pypdfium2", specifier = "==5.15.2" },
     { name = "python-docx", specifier = "==1.2.0" },
+    { name = "python-multipart", specifier = "==0.0.33" },
     { name = "reportlab", specifier = "==5.1.0" },
 ]
 
