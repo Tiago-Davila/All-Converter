@@ -7,6 +7,9 @@ from pathlib import Path
 
 import pytest
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
+from pydantic import SecretStr
+from starlette.testclient import TestClient
 
 from convertitodo_mcp import __version__
 from convertitodo_mcp.server import cli
@@ -30,10 +33,11 @@ def _config(tmp_path: Path) -> Configuracion:
 async def test_ping_listada(tmp_path: Path) -> None:
     async with Client(crear_servidor(_config(tmp_path))) as cliente:
         herramientas = await cliente.list_tools()
-    assert [h.name for h in herramientas] == ["ping"]
-    assert "Comprueba que el servidor responde" in (herramientas[0].description or "")
-    assert herramientas[0].annotations is not None
-    assert herramientas[0].annotations.read_only_hint is True
+    assert {h.name for h in herramientas} == {"ping", "crear_pdf"}
+    ping = next(h for h in herramientas if h.name == "ping")
+    assert "Comprueba que el servidor responde" in (ping.description or "")
+    assert ping.annotations is not None
+    assert ping.annotations.read_only_hint is True
 
 
 # ping devuelve estado ok, servidor, versión y hora ISO 8601 parseable.
@@ -122,3 +126,56 @@ def test_main_interrupcion(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
 
     monkeypatch.setattr(cli, "ejecutar", _interrumpir)
     assert cli.main([]) == 0
+
+
+@pytest.mark.anyio
+async def test_crear_pdf_y_descargar(tmp_path: Path) -> None:
+    token = "token-de-prueba-1234567890"  # noqa: S105
+    config = Configuracion(carpeta_trabajo=tmp_path, transporte="http", token=SecretStr(token))
+    servidor = crear_servidor(config)
+    async with Client(servidor) as cliente:
+        resultado = await cliente.call_tool(
+            "crear_pdf", {"titulo": "Informe", "markdown": "# Hola"}
+        )
+    datos = resultado.structured_content
+    assert datos is not None
+    assert datos["nombre"] == "Informe.pdf"
+    assert datos["paginas"] == 1
+    assert datos["url"] == f"/files/{datos['id']}"
+    with TestClient(servidor.http_app()) as http:
+        respuesta = http.get(str(datos["url"]), headers={"Authorization": f"Bearer {token}"})
+    assert respuesta.status_code == 200
+    assert respuesta.content.startswith(b"%PDF")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "argumentos",
+    [
+        {"titulo": "Informe"},
+        {"titulo": "Informe", "markdown": "hola", "bloques": []},
+    ],
+)
+async def test_crear_pdf_exige_una_fuente(tmp_path: Path, argumentos: dict[str, object]) -> None:
+    async with Client(crear_servidor(_config(tmp_path))) as cliente:
+        with pytest.raises(ToolError, match="exactamente una fuente"):
+            await cliente.call_tool("crear_pdf", argumentos)
+
+
+@pytest.mark.anyio
+async def test_crear_pdf_rechaza_limite(tmp_path: Path) -> None:
+    config = Configuracion(carpeta_trabajo=tmp_path, max_bloques=1)
+    async with Client(crear_servidor(config)) as cliente:
+        with pytest.raises(ToolError, match="máximo permitido"):
+            await cliente.call_tool("crear_pdf", {"titulo": "Informe", "markdown": "Uno\n\nDos"})
+    assert not list((tmp_path / "outputs").rglob("*.pdf"))
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("contenido", [{"markdown": "  "}, {"bloques": []}])
+async def test_crear_pdf_rechaza_contenido_vacio(
+    tmp_path: Path, contenido: dict[str, object]
+) -> None:
+    async with Client(crear_servidor(_config(tmp_path))) as cliente:
+        with pytest.raises(ToolError, match="contenido del documento está vacío"):
+            await cliente.call_tool("crear_pdf", {"titulo": "Informe", **contenido})

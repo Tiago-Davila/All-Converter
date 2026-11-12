@@ -17,6 +17,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen.canvas import Canvas
+from reportlab.platypus.doctemplate import LayoutError
 from reportlab.platypus import (
     Flowable,
     Image as ImagenPDF,
@@ -257,5 +258,11 @@ def renderizar_pdf(
             )
             lienzo.restoreState()
 
-    documento.build(contenido, onFirstPage=pie, onLaterPages=pie)
+    try:
+        documento.build(contenido, onFirstPage=pie, onLaterPages=pie)
+    except LayoutError:
+        raise ErrorArgumento(
+            "Un elemento no cabe en la página.",
+            "reducí los márgenes, cambiá la orientación o dividí el contenido de la tabla.",
+        ) from None
     return salida.getvalue()

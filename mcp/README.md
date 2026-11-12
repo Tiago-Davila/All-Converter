@@ -4,10 +4,10 @@ Servidor MCP en Python para que un modelo local (llama-server, OpenCode) pueda *
 Excel** a partir de Markdown o bloques estructurados, **leer documentos** y **convertir entre
 formatos**. Corre en la máquina del usuario o en su red local.
 
-> **Estado actual: servidor mínimo (fase 2, en curso).** Hoy el servidor arranca por stdio y por
-> HTTP y ofrece la herramienta `ping`. Por HTTP exige un token Bearer y permite subir y descargar
-> archivos (`POST /files`, `GET /files/{id}`). Todavía no crea, lee ni convierte
-> documentos. Hoja de ruta completa: issues #104 a #113.
+> **Estado actual: fase 3.** El servidor ofrece `ping` y `crear_pdf` por stdio y HTTP.
+> Por HTTP exige un token Bearer y permite subir y descargar archivos (`POST /files`,
+> `GET /files/{id}`). Las demás conversiones y la lectura están pendientes.
+> Hoja de ruta completa: issues #104 a #113.
 
 ---
 
@@ -95,6 +95,38 @@ Si hay un error de configuración, el servidor lo explica en stderr y termina co
 | Herramienta | Qué hace |
 |---|---|
 | `ping` | Sin argumentos. Comprueba que el servidor responde y devuelve `estado` (`ok`), `servidor`, `version` y `hora` (ISO 8601, UTC). Es de solo lectura. |
+| `crear_pdf` | Crea un PDF a partir de Markdown o bloques y devuelve `id`, `nombre`, `paginas` y `url`. |
+
+
+### Crear un PDF
+
+`crear_pdf` exige `titulo` y exactamente uno de `markdown` o `bloques`. Los bloques admiten
+`título` (tipo `titulo`), párrafo, lista anidada, tabla, código, cita, salto de página e imagen
+con el `id` de un archivo previamente subido. Las imágenes se validan y se ajustan a la página.
+Las tablas largas repiten su encabezado. El diseño y la cobertura de caracteres dependen de las
+fuentes incluidas; una celda que no cabe en una página debe dividirse.
+
+Ejemplo de argumentos MCP:
+
+```json
+{
+  "titulo": "Informe",
+  "markdown": "# Informe\n\nTexto con **negrita**.",
+  "opciones": {
+    "tamano": "A4",
+    "orientacion": "vertical",
+    "margenes": {"superior": 25, "inferior": 25, "izquierdo": 25, "derecho": 25},
+    "autor": "Autora",
+    "numerar_paginas": true
+  }
+}
+```
+
+Las opciones admiten tamaño `A4` o `Carta`, orientación `vertical` u `horizontal`, márgenes en
+milímetros, `titulo` y `autor` en los metadatos y `numerar_paginas`. Sin título de metadatos se
+usa el argumento `titulo`; la numeración requiere margen inferior de al menos 10 mm. El resultado
+contiene una URL relativa `/files/{id}`: solo es descargable por HTTP con el token. En stdio no se
+habilita HTTP; el archivo queda en la carpeta `outputs/` del directorio de trabajo hasta su TTL.
 
 ---
 
