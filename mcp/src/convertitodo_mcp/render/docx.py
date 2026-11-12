@@ -12,6 +12,7 @@ from convertitodo_mcp.blocks import (
     Bloque,
     Cita,
     Codigo,
+    Imagen,
     Lista,
     Parrafo,
     SaltoPagina,
@@ -19,7 +20,7 @@ from convertitodo_mcp.blocks import (
     Titulo,
     texto_plano,
 )
-from convertitodo_mcp.render.docx_layout import OpcionesDOCX, crear_documento
+from convertitodo_mcp.render.docx_layout import OpcionesDOCX, crear_documento, insertar_imagen
 from convertitodo_mcp.server.config import Configuracion
 from convertitodo_mcp.storage import Almacen
 
@@ -81,6 +82,8 @@ def agregar_bloques(
         elif isinstance(bloque, Codigo):
             parrafo = documento.add_paragraph()
             parrafo.add_run(bloque.texto).font.name = "Noto Sans Mono"
+        elif isinstance(bloque, Imagen):
+            insertar_imagen(documento, bloque, almacen=almacen, config=config)
         elif isinstance(bloque, SaltoPagina):
             documento.add_page_break()
 
