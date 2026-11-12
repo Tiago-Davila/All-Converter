@@ -46,15 +46,6 @@ exista (por ejemplo un error de tipeo) hace que el servidor no arranque y expliq
 | `CONVERTITODO_MCP_MAX_BLOQUES` | Máximo de bloques por documento (mínimo 1). | `2000` |
 | `CONVERTITODO_MCP_MAX_FILAS` | Máximo de filas por hoja (mínimo 1). | `10000` |
 
----|---|---|
-| `CONVERTITODO_MCP_HOST` | Dirección en la que escucha el transporte HTTP. | `127.0.0.1` |
-| `CONVERTITODO_MCP_PORT` | Puerto del transporte HTTP. | `8765` |
-| `CONVERTITODO_MCP_TOKEN` | Token Bearer que deben enviar los clientes HTTP. | Sin valor. Obligatorio para HTTP; el servidor no arranca en `0.0.0.0` sin token. |
-| `CONVERTITODO_MCP_WORKDIR` | Carpeta de trabajo, con `uploads/` (entradas) y `outputs/` (resultados). | A definir en la fase 2 |
-| `CONVERTITODO_MCP_TTL_MINUTOS` | Minutos tras los cuales se borran automáticamente los archivos viejos. | A definir en la fase 2 |
-| `CONVERTITODO_MCP_MAX_MB` | Tamaño máximo de un archivo de entrada. | A definir en la fase 2 |
-| `CONVERTITODO_MCP_TIMEOUT_S` | Timeout, en segundos, por herramienta. | A definir en la fase 2 |
-
 ---
 
 ## Cómo arrancarlo
