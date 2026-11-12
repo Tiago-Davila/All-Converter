@@ -30,11 +30,23 @@ Las dependencias están fijadas en `pyproject.toml` y `uv.lock`.
 
 ## Variables de entorno
 
-> **Previstas, se implementan en la fase 2 (#105).** Todavía no hay código que las lea; los
-> nombres y valores pueden ajustarse al implementarlas (T008).
+Todas son opcionales. Un valor inválido o una variable con el prefijo `CONVERTITODO_MCP_` que no
+exista (por ejemplo un error de tipeo) hace que el servidor no arranque y explique cómo corregirlo.
 
 | Variable | Para qué sirve | Por defecto |
 |---|---|---|
+| `CONVERTITODO_MCP_TRANSPORTE` | Transporte del servidor: `stdio` o `http`. | `stdio` |
+| `CONVERTITODO_MCP_HOST` | Dirección en la que escucha el transporte HTTP. No puede estar vacía. | `127.0.0.1` |
+| `CONVERTITODO_MCP_PORT` | Puerto del transporte HTTP, de 1 a 65535. | `8765` |
+| `CONVERTITODO_MCP_TOKEN` | Token Bearer que deben enviar los clientes HTTP. Mínimo 16 caracteres; vacío equivale a no definirlo. | Sin valor. Obligatorio para HTTP; el servidor no arranca en `0.0.0.0` sin token. |
+| `CONVERTITODO_MCP_WORKDIR` | Carpeta de trabajo, con `uploads/` (entradas) y `outputs/` (resultados). Se expande `~`. | `$XDG_DATA_HOME/convertitodo-mcp` o `~/.local/share/convertitodo-mcp` |
+| `CONVERTITODO_MCP_TTL_MINUTOS` | Minutos tras los cuales se borran automáticamente los archivos viejos (mínimo 1). | `60` |
+| `CONVERTITODO_MCP_MAX_MB` | Tamaño máximo de un archivo de entrada, en MB (mínimo 1). | `25` |
+| `CONVERTITODO_MCP_TIMEOUT_S` | Timeout, en segundos, por herramienta (mínimo 1). | `60` |
+| `CONVERTITODO_MCP_MAX_BLOQUES` | Máximo de bloques por documento (mínimo 1). | `2000` |
+| `CONVERTITODO_MCP_MAX_FILAS` | Máximo de filas por hoja (mínimo 1). | `10000` |
+
+---|---|---|
 | `CONVERTITODO_MCP_HOST` | Dirección en la que escucha el transporte HTTP. | `127.0.0.1` |
 | `CONVERTITODO_MCP_PORT` | Puerto del transporte HTTP. | `8765` |
 | `CONVERTITODO_MCP_TOKEN` | Token Bearer que deben enviar los clientes HTTP. | Sin valor. Obligatorio para HTTP; el servidor no arranca en `0.0.0.0` sin token. |
