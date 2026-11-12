@@ -23,7 +23,7 @@ Las dependencias están fijadas en `pyproject.toml` y `uv.lock`.
 
 | Uso | Paquetes |
 |---|---|
-| Ejecución | fastmcp, pydantic, reportlab, pypdf, python-docx, openpyxl, markitdown, pypdfium2, pillow, markdown-it-py |
+| Ejecución | anyio, fastmcp, pydantic, reportlab, pypdf, python-docx, openpyxl, markitdown, pypdfium2, pillow, markdown-it-py |
 | Desarrollo | ruff, mypy (estricto), pytest |
 
 ---
