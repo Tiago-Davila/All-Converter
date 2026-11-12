@@ -11,9 +11,6 @@ con librerías JS/WASM. Los archivos del usuario NUNCA salen de su máquina.
 ## Reglas duras (no negociables)
 1. Ningún archivo del usuario se envía a ningún servidor, API ni servicio externo.
    Si una solución requiere red para procesar el archivo, está descartada.
-2. Este proyecto se gestiona con Spec-Driven Development (GitHub Spec Kit).
-   La fuente de verdad está en specs/001-convertitodo/. No implementar nada que
-   no esté trazado a una tarea de tasks.md. Una tarea, un diff, un commit.
 3. Toda conversión implementa la interfaz Converter (src/converters/types.ts) y se
    registra en src/converters/registry.ts. La UI solo conoce el registry.
 4. Los conversores NO importan React ni tocan el DOM. Lógica y UI separadas siempre.
@@ -55,5 +52,8 @@ con librerías JS/WASM. Los archivos del usuario NUNCA salen de su máquina.
 
 ## Estilo de trabajo
 - Commits  descriptivos en español (conventional commits: feat, fix, test, chore), no agregues coautoria al commit.
-- Ante ambigüedad entre el pedido y la spec, gana la spec; avisar la discrepancia.
+- Ante ambigüedad entre el pedido y el plan, preguntar primero.
 - No agregar dependencias nuevas sin justificarlas primero.
+- Por cada tarea, crear PR sin mencion a claude code.
+- Por cada tarea crear una rama, y mergear a Develop.
+- Comentarios en español, y solo una linea arriba del metodo.
