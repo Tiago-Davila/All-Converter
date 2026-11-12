@@ -10,8 +10,26 @@ from openpyxl.worksheet.worksheet import Worksheet
 from convertitodo_mcp.blocks.planilla import Formula, Hoja, Planilla, TipoColumna, Valor
 from convertitodo_mcp.limites import verificar_filas
 from convertitodo_mcp.render.xlsx_formulas import validar_formula
-from convertitodo_mcp.render.xlsx_valores import FORMATOS, convertir_valor, formato_para
+from convertitodo_mcp.render.xlsx_valores import (
+    FORMATOS,
+    ValorCelda,
+    convertir_valor,
+    formato_para,
+)
 from convertitodo_mcp.server.config import Configuracion
+
+# Prefijos que una aplicación de planillas podría interpretar como fórmula o comando.
+PREFIJOS_PELIGROSOS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def asignar_literal(celda: Cell, valor: ValorCelda) -> None:
+    """Asigna un literal; un texto que parece fórmula queda guardado como texto."""
+    celda.value = valor
+    if isinstance(valor, str) and valor.startswith(PREFIJOS_PELIGROSOS):
+        # openpyxl marca como fórmula todo texto que empieza con '='; se fuerza texto y se
+        # agrega el apóstrofo invisible para que Excel no lo evalúe al editar la celda.
+        celda.data_type = "s"
+        celda.quotePrefix = True
 
 
 def escribir_celda(
@@ -29,14 +47,14 @@ def escribir_celda(
         celda.number_format = formato or FORMATOS[tipo]
         return
     convertido = convertir_valor(valor, tipo, ubicacion)
-    celda.value = convertido
+    asignar_literal(celda, convertido)
     celda.number_format = formato_para(tipo, convertido, formato)
 
 
 def escribir_hoja(hoja_xlsx: Worksheet, hoja: Hoja, hojas: Collection[str]) -> None:
     """Escribe encabezado y filas de datos con sus tipos reales."""
     for indice, columna in enumerate(hoja.columnas, start=1):
-        hoja_xlsx.cell(row=1, column=indice, value=columna.nombre)
+        asignar_literal(hoja_xlsx.cell(row=1, column=indice), columna.nombre)
     for numero, fila in enumerate(hoja.filas, start=2):
         for indice, (columna, valor) in enumerate(zip(hoja.columnas, fila, strict=True), 1):
             escribir_celda(

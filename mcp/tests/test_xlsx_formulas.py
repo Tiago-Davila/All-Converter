@@ -110,3 +110,47 @@ def test_formula_con_hoja_inexistente_indica_ubicacion(tmp_path: Path) -> None:
     )
     with pytest.raises(ErrorArgumento, match="la hoja 'Datos', fila 1, columna 'A'"):
         renderizar_xlsx(planilla, Configuracion(carpeta_trabajo=tmp_path))
+
+
+@pytest.mark.parametrize(
+    "texto", ["=1+1", "+54 11 5555", "-x", "@SUM(A1)", "\tcmd", "\r=2", '=HYPERLINK("http://x")']
+)
+def test_texto_que_parece_formula_se_guarda_como_texto(tmp_path: Path, texto: str) -> None:
+    planilla = Planilla.model_validate(
+        {
+            "hojas": [
+                {
+                    "nombre": "Datos",
+                    "columnas": [{"nombre": texto}, {"nombre": "Normal"}],
+                    "filas": [[texto, "texto común"]],
+                }
+            ]
+        }
+    )
+    hoja = load_workbook(
+        BytesIO(renderizar_xlsx(planilla, Configuracion(carpeta_trabajo=tmp_path)))
+    )["Datos"]
+    for celda in (hoja["A1"], hoja["A2"]):
+        assert celda.value == texto
+        assert celda.data_type == "s"
+        assert celda.quotePrefix is True
+    assert hoja["B2"].quotePrefix is False
+
+
+def test_numero_negativo_en_columna_numerica_sigue_siendo_numero(tmp_path: Path) -> None:
+    planilla = Planilla.model_validate(
+        {
+            "hojas": [
+                {
+                    "nombre": "Datos",
+                    "columnas": [{"nombre": "Saldo", "tipo": "numero"}],
+                    "filas": [["-12,5"]],
+                }
+            ]
+        }
+    )
+    celda = load_workbook(
+        BytesIO(renderizar_xlsx(planilla, Configuracion(carpeta_trabajo=tmp_path)))
+    )["Datos"]["A2"]
+    assert celda.value == -12.5
+    assert celda.data_type == "n"
