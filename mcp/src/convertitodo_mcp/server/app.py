@@ -19,7 +19,7 @@ from convertitodo_mcp.server.lectura import (
     crear_herramienta_leer,
 )
 from convertitodo_mcp.server.pdf import crear_herramienta_pdf
-from convertitodo_mcp.server.xlsx import crear_herramienta_xlsx
+from convertitodo_mcp.server.xlsx import crear_herramienta_editar_xlsx, crear_herramienta_xlsx
 from convertitodo_mcp.storage.almacen import Almacen
 from convertitodo_mcp.storage.limpieza import crear_ciclo_de_vida
 
@@ -113,6 +113,21 @@ def crear_servidor(config: Configuracion) -> FastMCP:
             '{"formula": "=SUM(B2:B5)"} en inglés. Extras por hoja: fila_totales, '
             "formato_condicional y tabla. opciones controla encabezado, paneles, autofiltro, "
             "anchos y símbolo de moneda. Devuelve id, nombre, hojas y URL relativa."
+        ),
+        annotations=ToolAnnotations(
+            read_only_hint=False, idempotent_hint=False, open_world_hint=False
+        ),
+    )
+    servidor.tool(
+        crear_herramienta_editar_xlsx(almacen, config),
+        name="editar_xlsx",
+        description=(
+            "Edita una copia de un Excel por archivo (id). operaciones admite agregar_filas "
+            "(hoja, filas debajo de los datos; mueve la fila de totales y extiende tablas, "
+            "filtros y formato condicional), agregar_hoja (hoja con el esquema de crear_xlsx) y "
+            "escribir_celdas (hoja, celdas con celda como B3 y valor o formula). Los valores "
+            "toman el tipo y estilo de la celda de arriba. Conserva el original; devuelve id, "
+            "nombre, hojas y URL."
         ),
         annotations=ToolAnnotations(
             read_only_hint=False, idempotent_hint=False, open_world_hint=False

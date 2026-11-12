@@ -138,3 +138,44 @@ async def test_crear_xlsx_respeta_limite_de_filas(tmp_path: Path) -> None:
     async with Client(crear_servidor(config)) as cliente:
         with pytest.raises(ToolError, match="máximo permitido es 2"):
             await cliente.call_tool("crear_xlsx", {"titulo": "x", "csv": "a\n1\n2\n3\n"})
+
+
+@pytest.mark.anyio
+async def test_editar_xlsx_conserva_original(tmp_path: Path) -> None:
+    async with Client(crear_servidor(Configuracion(carpeta_trabajo=tmp_path))) as cliente:
+        herramienta = {h.name: h for h in await cliente.list_tools()}["editar_xlsx"]
+        assert set(herramienta.input_schema["required"]) == {"archivo", "operaciones"}
+        creado = await cliente.call_tool("crear_xlsx", {"titulo": "Base", "csv": "A,B\nx,1\n"})
+        assert creado.structured_content is not None
+        original = creado.structured_content["id"]
+        editado = await cliente.call_tool(
+            "editar_xlsx",
+            {
+                "archivo": original,
+                "operaciones": [
+                    {"tipo": "agregar_filas", "hoja": "Hoja1", "filas": [["y", "2"]]},
+                    {
+                        "tipo": "agregar_hoja",
+                        "hoja": {
+                            "nombre": "Resumen",
+                            "columnas": [{"nombre": "Total", "tipo": "numero"}],
+                            "filas": [[{"formula": "=SUM(Hoja1!B2:B3)"}]],
+                        },
+                    },
+                ],
+            },
+        )
+        with pytest.raises(ToolError) as error:
+            await cliente.call_tool(
+                "editar_xlsx",
+                {
+                    "archivo": "../../secreto",
+                    "operaciones": [{"tipo": "agregar_filas", "hoja": "H", "filas": [["x"]]}],
+                },
+            )
+    datos = editado.structured_content
+    assert datos is not None
+    assert datos["id"] != original
+    assert datos["nombre"] == "Base-editado.xlsx"
+    assert datos["hojas"] == ["Hoja1", "Resumen"]
+    assert str(tmp_path) not in str(error.value)

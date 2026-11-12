@@ -4,7 +4,7 @@ Servidor MCP en Python para que un modelo local (llama-server, OpenCode) pueda *
 Excel** a partir de Markdown o bloques estructurados, **leer documentos** y **convertir entre
 formatos**. Corre en la máquina del usuario o en su red local.
 
-> **Estado actual: fases 4 a 6.** El servidor crea PDF, Word y Excel, edita copias de Word y
+> **Estado actual: fases 1 a 6 completas.** El servidor crea PDF, Word y Excel, edita copias de Word y Excel y
 > consulta documentos con `info_documento`, `leer_documento` y `buscar_en_documento` por stdio
 > y HTTP. Por HTTP exige un token Bearer y permite subir y descargar archivos (`POST /files`,
 > `GET /files/{id}`). Las conversiones entre formatos están pendientes.
@@ -100,6 +100,7 @@ Si hay un error de configuración, el servidor lo explica en stderr y termina co
 | `crear_docx` | Crea un Word editable con Markdown o bloques; devuelve `id`, `nombre` y `url`. |
 | `editar_docx` | Edita una copia de un Word por id; conserva el original y devuelve `id`, `nombre` y `url`. |
 | `crear_xlsx` | Crea un Excel con hojas tipadas, una tabla Markdown o un CSV; devuelve `id`, `nombre`, `hojas` y `url`. |
+| `editar_xlsx` | Edita una copia de un Excel por id: agrega filas u hojas y escribe celdas; devuelve `id`, `nombre`, `hojas` y `url`. |
 | `info_documento` | Consulta tipo, tamaño en bytes, páginas y hojas sin extraer todo el texto. |
 | `leer_documento` | Lee una página virtual de Markdown, con origen y continuación. |
 | `buscar_en_documento` | Busca texto literal sin distinguir mayúsculas y devuelve fragmentos acotados. |
@@ -261,6 +262,42 @@ Como entrada rápida, `markdown` acepta un texto con exactamente una tabla y `cs
 encabezado separado por coma, punto y coma o tabulación. Los dos crean una hoja `Hoja1` e
 infieren el tipo de cada columna. Los códigos con ceros a la izquierda, los teléfonos y los
 números de más de 15 dígitos quedan como texto.
+
+### Editar un Excel
+
+`editar_xlsx` recibe `archivo` (id de un XLSX subido o generado) y una lista no vacía de
+`operaciones`, que se aplican en orden. Siempre guarda una copia nueva y conserva el original.
+
+```json
+{
+  "archivo": "id-del-xlsx",
+  "operaciones": [
+    {"tipo": "agregar_filas", "hoja": "Ventas", "filas": [["Mate", "1.200,50", "14/11/2026"]]},
+    {"tipo": "escribir_celdas", "hoja": "Ventas",
+     "celdas": [{"celda": "B2", "valor": 1600}, {"celda": "F1", "valor": {"formula": "=SUM(B:B)"}}]},
+    {"tipo": "agregar_hoja", "hoja": {"nombre": "Resumen",
+     "columnas": [{"nombre": "Total", "tipo": "moneda"}],
+     "filas": [[{"formula": "=SUM(Ventas2026[Subtotal])"}]]}}
+  ]
+}
+```
+
+- `agregar_filas` escribe debajo de la última fila con datos. Si la hoja termina en una fila de
+  totales generada por `crear_xlsx`, esa fila baja y sus `SUBTOTAL` incluyen las filas nuevas.
+  Las tablas, el autofiltro y el formato condicional que terminaban en la última fila de datos
+  se extienden.
+- `escribir_celdas` escribe en referencias como `B3`. No modifica los encabezados de una tabla
+  de Excel ni las celdas internas de un rango combinado.
+- `agregar_hoja` usa el mismo esquema de hoja que `crear_xlsx`, con las opciones de formato por
+  defecto.
+
+Los valores nuevos toman el tipo, el formato y el estilo de la celda que les sirve de modelo:
+la de la fila anterior en `agregar_filas`, y la propia celda o la de arriba si está vacía en
+`escribir_celdas`. Por eso `"1.200,50"` se guarda como número en una columna numérica. Las
+fórmulas y la protección contra inyección funcionan igual que al crear. Las fórmulas existentes
+que apuntaban a la fila de totales movida no se actualizan; corregilas con `escribir_celdas`.
+openpyxl no conserva gráficos ni imágenes del libro original, y los vínculos externos y las
+macros nunca se cargan.
 
 ### Leer y buscar documentos
 
