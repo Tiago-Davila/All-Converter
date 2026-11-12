@@ -17,6 +17,9 @@ dependencies = [
     "markdown-it-py==4.3.0",
 ]
 
+[project.scripts]
+convertitodo-mcp = "convertitodo_mcp.server.cli:main"
+
 [dependency-groups]
 dev = [
     "ruff==0.17.4",
