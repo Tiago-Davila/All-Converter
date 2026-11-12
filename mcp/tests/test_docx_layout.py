@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from docx.enum.section import WD_ORIENT
+from docx.oxml.ns import qn
 from pydantic import ValidationError
 
 from convertitodo_mcp.blocks import Imagen
@@ -14,6 +15,7 @@ from convertitodo_mcp.render.docx_layout import (
     OpcionesDOCX,
     crear_documento,
     insertar_imagen,
+    insertar_tabla_contenido,
 )
 from convertitodo_mcp.server.config import Configuracion
 from convertitodo_mcp.storage import Almacen
@@ -28,6 +30,32 @@ def test_pagina_predeterminada_y_estilos() -> None:
     assert doc.styles["Normal"].font.name == "Noto Sans"
     assert doc.styles["Normal"].font.size.pt == 11
     assert str(doc.styles["Heading 1"].font.color.rgb) == "000000"
+
+
+def test_indice_es_opcional_y_usa_estilos_de_titulo() -> None:
+    sin_indice = crear_documento(OpcionesDOCX())
+    assert not sin_indice.element.body.xpath(".//w:fldSimple")
+    assert sin_indice.settings.element.find(qn("w:updateFields")) is None
+
+    doc = crear_documento(OpcionesDOCX(tabla_contenido=True))
+    insertar_tabla_contenido(doc)
+    campos = doc.element.body.xpath(".//w:fldSimple")
+    assert len(campos) == 1
+    assert campos[0].get(qn("w:instr")) == r'TOC \o "1-6" \h \z \u'
+    assert campos[0].get(qn("w:dirty")) == "true"
+    assert doc.paragraphs[0].style.name == "Title"
+    assert doc.settings.element.find(qn("w:updateFields")).get(qn("w:val")) == "true"
+
+
+def test_indice_actualiza_ajuste_existente_sin_duplicarlo() -> None:
+    doc = crear_documento(OpcionesDOCX(tabla_contenido=True))
+    insertar_tabla_contenido(doc)
+    ajuste = doc.settings.element.find(qn("w:updateFields"))
+    ajuste.set(qn("w:val"), "false")
+    insertar_tabla_contenido(doc)
+    ajustes = doc.settings.element.findall(qn("w:updateFields"))
+    assert len(ajustes) == 1
+    assert ajustes[0].get(qn("w:val")) == "true"
 
 
 def test_carta_horizontal_y_margenes() -> None:

@@ -22,7 +22,12 @@ from convertitodo_mcp.blocks import (
     Titulo,
     Tramo,
 )
-from convertitodo_mcp.render.docx_layout import OpcionesDOCX, crear_documento, insertar_imagen
+from convertitodo_mcp.render.docx_layout import (
+    OpcionesDOCX,
+    crear_documento,
+    insertar_imagen,
+    insertar_tabla_contenido,
+)
 from convertitodo_mcp.server.config import Configuracion
 from convertitodo_mcp.storage import Almacen
 
@@ -118,10 +123,13 @@ def renderizar_docx(
     titulo: str = "",
 ) -> bytes:
     """Devuelve un documento DOCX en memoria."""
-    documento = crear_documento(opciones or OpcionesDOCX(), almacen=almacen, config=config)
+    opciones = opciones or OpcionesDOCX()
+    documento = crear_documento(opciones, almacen=almacen, config=config)
     documento.core_properties.title = titulo
     if titulo:
         documento.add_paragraph(titulo, style="Title")
+    if opciones.tabla_contenido:
+        insertar_tabla_contenido(documento)
     agregar_bloques(documento, bloques, almacen=almacen, config=config)
     salida = BytesIO()
     documento.save(salida)

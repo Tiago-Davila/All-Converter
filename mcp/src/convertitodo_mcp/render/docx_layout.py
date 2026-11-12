@@ -8,6 +8,8 @@ from typing import Literal
 from docx import Document
 from docx.document import Document as DocumentoDOCX
 from docx.enum.section import WD_ORIENT
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from docx.shared import Mm, Pt, RGBColor
 from PIL import Image as ImagenPIL
 from PIL import UnidentifiedImageError
@@ -35,6 +37,7 @@ class OpcionesDOCX(BaseModel):
     tamano: Literal["A4", "Carta"] | None = None
     orientacion: Literal["vertical", "horizontal"] | None = None
     margenes: MargenesDOCX | None = None
+    tabla_contenido: bool = False
 
     @model_validator(mode="after")
     def _validar_espacio(self) -> "OpcionesDOCX":
@@ -77,6 +80,22 @@ def crear_documento(
         fuente.name = "Noto Sans"
         fuente.color.rgb = RGBColor(0, 0, 0)
     return documento
+
+
+def insertar_tabla_contenido(documento: DocumentoDOCX) -> None:
+    """Inserta un campo de índice que Word actualizará al abrir el documento."""
+    documento.add_paragraph("Tabla de contenido", style="Title")
+    parrafo = documento.add_paragraph()
+    campo = OxmlElement("w:fldSimple")
+    campo.set(qn("w:instr"), r'TOC \o "1-6" \h \z \u')
+    campo.set(qn("w:dirty"), "true")
+    parrafo._p.append(campo)
+    ajustes = documento.settings.element
+    actualizacion = ajustes.find(qn("w:updateFields"))
+    if actualizacion is None:
+        actualizacion = OxmlElement("w:updateFields")
+        ajustes.append(actualizacion)
+    actualizacion.set(qn("w:val"), "true")
 
 
 def insertar_imagen(
