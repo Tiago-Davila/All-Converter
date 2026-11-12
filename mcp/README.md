@@ -114,6 +114,20 @@ Al superar un tope, la herramienta devuelve un error en español que indica cuá
 el máximo y cómo corregirlo (achicar o dividir el documento, o subir la variable). Si vence el
 tiempo, la llamada se cancela con un error de tiempo agotado.
 
+## Borrado automático
+
+Los archivos de `uploads/` y `outputs/` no se conservan para siempre: pasado el TTL desde su
+última modificación, el servidor los borra solos. El TTL se ajusta con
+`CONVERTITODO_MCP_TTL_MINUTOS` (60 minutos por defecto).
+
+- **Cuándo se revisa**: al arrancar, y después cada cuarto del TTL, entre 30 segundos y 15 minutos
+  (con el TTL por defecto, cada 15 minutos).
+- **Qué se borra**: los archivos vencidos y también las carpetas de reserva abandonadas (vacías o
+  con solo temporales) que superaron el TTL.
+- **Qué no toca**: nada fuera de `uploads/` y `outputs/`, y no sigue enlaces simbólicos.
+
+Si un id deja de existir, la herramienta lo informa y hay que subir o generar el archivo de nuevo.
+
 ---
 
 ## Desarrollo
