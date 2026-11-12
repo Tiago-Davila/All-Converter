@@ -79,5 +79,73 @@ async def test_leer_valida_antes_de_cargar(tmp_path: Path, monkeypatch: pytest.M
         Almacen(tmp_path), Configuracion(carpeta_trabajo=tmp_path)
     )
     for pagina, max_caracteres in [(0, 1), (1, 0), (1, 20001)]:
-        with pytest.raises(ToolError, match="página|caracteres"):
+        with pytest.raises(ToolError, match=r"página|caracteres"):
             await leer("id", pagina, max_caracteres)
+
+
+@pytest.mark.anyio
+async def test_buscar_unicode_literal_y_paginas(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from convertitodo_mcp.read.modelos import DocumentoLeido, EntradaDocumento
+    from convertitodo_mcp.server import lectura
+
+    documento = DocumentoLeido(tipo="pdf", paginas=["x" * 7999 + "Straße y STRASSE. a.b"])
+    monkeypatch.setattr(
+        lectura, "cargar_entrada", lambda *args: EntradaDocumento("archivo.pdf", "pdf", b"pdf")
+    )
+    monkeypatch.setattr(lectura, "leer_markitdown", lambda *args: documento)
+    buscar = lectura.crear_herramienta_buscar(
+        Almacen(tmp_path), Configuracion(carpeta_trabajo=tmp_path)
+    )
+    resultado = await buscar("id", "STRASSE")
+    assert [c.pagina for c in resultado.coincidencias] == [1, 2]
+    assert all(c.origen == 1 and len(c.fragmento) <= 300 for c in resultado.coincidencias)
+    assert "Straße" in resultado.coincidencias[0].fragmento
+    assert not resultado.truncado
+    literal = await buscar("id", "a.b")
+    assert len(literal.coincidencias) == 1
+    assert not (await buscar("id", "a?b")).coincidencias
+
+
+@pytest.mark.anyio
+async def test_buscar_limites(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from convertitodo_mcp.read.modelos import DocumentoLeido, EntradaDocumento
+    from convertitodo_mcp.server import lectura
+
+    monkeypatch.setattr(
+        lectura, "cargar_entrada", lambda *args: EntradaDocumento("a.pdf", "pdf", b"pdf")
+    )
+    monkeypatch.setattr(
+        lectura, "leer_markitdown", lambda *args: DocumentoLeido(tipo="pdf", paginas=["a " * 21])
+    )
+    buscar = lectura.crear_herramienta_buscar(
+        Almacen(tmp_path), Configuracion(carpeta_trabajo=tmp_path)
+    )
+    resultado = await buscar("id", "a")
+    assert len(resultado.coincidencias) == 20
+    assert resultado.truncado
+    for texto in ("", "  ", "a" * 2001):
+        with pytest.raises(ToolError, match="búsqueda"):
+            await buscar("id", texto)
+
+
+@pytest.mark.anyio
+async def test_buscar_expansion_al_cruzar_pagina(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from convertitodo_mcp.read.modelos import DocumentoLeido, EntradaDocumento
+    from convertitodo_mcp.server import lectura
+
+    documento = DocumentoLeido(tipo="pdf", paginas=["x" * 7999 + "ffi ß"])
+    monkeypatch.setattr(
+        lectura, "cargar_entrada", lambda *args: EntradaDocumento("a.pdf", "pdf", b"pdf")
+    )
+    monkeypatch.setattr(lectura, "leer_markitdown", lambda *args: documento)
+    buscar = lectura.crear_herramienta_buscar(
+        Almacen(tmp_path), Configuracion(carpeta_trabajo=tmp_path)
+    )
+    resultado = await buscar("id", "ﬃ")
+    assert len(resultado.coincidencias) == 1
+    assert resultado.coincidencias[0].pagina == 1
+    assert len((await buscar("id", "s")).coincidencias) == 1

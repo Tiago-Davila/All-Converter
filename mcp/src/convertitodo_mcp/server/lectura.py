@@ -108,3 +108,89 @@ def crear_herramienta_leer(almacen: Almacen, config: Configuracion) -> Herramien
         )
 
     return leer_documento
+
+
+class CoincidenciaDocumento(BaseModel):
+    pagina: int
+    origen: int
+    nombre_hoja: str | None
+    fragmento: str
+
+
+class ResultadoBusqueda(BaseModel):
+    archivo: str
+    tipo: TipoDocumento
+    coincidencias: list[CoincidenciaDocumento]
+    truncado: bool
+
+
+class HerramientaBuscarDocumento(Protocol):
+    def __call__(self, archivo: str, texto: str) -> Awaitable[ResultadoBusqueda]: ...
+
+
+def crear_herramienta_buscar(almacen: Almacen, config: Configuracion) -> HerramientaBuscarDocumento:
+    @herramienta_segura
+    async def buscar_en_documento(archivo: str, texto: str) -> ResultadoBusqueda:
+        """Busca texto literal sin distinguir mayúsculas en un documento local."""
+        if not texto.strip() or len(texto) > 2000:
+            raise ErrorArgumento(
+                "La búsqueda debe tener entre 1 y 2000 caracteres y no estar vacía.",
+                "indicá un texto de búsqueda válido.",
+            )
+
+        def buscar() -> ResultadoBusqueda:
+            entrada = cargar_entrada(archivo, almacen, config)
+            documento = leer_markitdown(entrada, config)
+            consulta = texto.casefold()
+            coincidencias: list[CoincidenciaDocumento] = []
+            numero_pagina = 0
+            for origen, contenido in enumerate(documento.paginas, 1):
+                cantidad = max(1, (len(contenido) + 7999) // 8000)
+                for indice in range(cantidad):
+                    numero_pagina += 1
+                    inicio_pagina = indice * 8000
+                    ventana = contenido[inicio_pagina : inicio_pagina + 8000 + len(consulta)]
+                    normalizado: list[str] = []
+                    posiciones: list[int] = []
+                    for posicion, caracter in enumerate(ventana):
+                        normal = caracter.casefold()
+                        normalizado.append(normal)
+                        posiciones.extend([posicion] * len(normal))
+                    cadena = "".join(normalizado)
+                    desde = 0
+                    while (encontrado := cadena.find(consulta, desde)) != -1:
+                        inicio = posiciones[encontrado]
+                        if inicio >= 8000:
+                            break
+                        if len(coincidencias) == 20:
+                            return ResultadoBusqueda(
+                                archivo=archivo,
+                                tipo=documento.tipo,
+                                coincidencias=coincidencias,
+                                truncado=True,
+                            )
+                        inicio_fragmento = max(0, inicio - 75)
+                        fin_fragmento = min(len(ventana), inicio_fragmento + 300)
+                        nombre_hoja = (
+                            documento.hojas[origen - 1] if origen <= len(documento.hojas) else None
+                        )
+                        coincidencias.append(
+                            CoincidenciaDocumento(
+                                pagina=numero_pagina,
+                                origen=origen,
+                                nombre_hoja=nombre_hoja,
+                                fragmento=ventana[inicio_fragmento:fin_fragmento],
+                            )
+                        )
+                        desde = encontrado + len(consulta)
+                        while desde < len(posiciones) and posiciones[desde] == inicio:
+                            desde += 1
+            return ResultadoBusqueda(
+                archivo=archivo, tipo=documento.tipo, coincidencias=coincidencias, truncado=False
+            )
+
+        return await ejecutar_con_limite(
+            buscar, config.timeout_s, que="la búsqueda en el documento"
+        )
+
+    return buscar_en_documento

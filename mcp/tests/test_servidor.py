@@ -42,6 +42,8 @@ async def test_ping_listada(tmp_path: Path) -> None:
         "crear_docx",
         "editar_docx",
         "info_documento",
+        "leer_documento",
+        "buscar_en_documento",
     }
     ping = next(h for h in herramientas if h.name == "ping")
     assert "Comprueba que el servidor responde" in (ping.description or "")
