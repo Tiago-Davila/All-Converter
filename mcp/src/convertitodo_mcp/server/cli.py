@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from convertitodo_mcp import __version__
 from convertitodo_mcp.errores import ErrorConfiguracion, ErrorConvertiTodo
 from convertitodo_mcp.server.app import crear_servidor
+from convertitodo_mcp.server.auth import validar_arranque
 from convertitodo_mcp.server.config import Configuracion, cargar_configuracion
 
 
@@ -29,6 +30,7 @@ def _crear_parser() -> argparse.ArgumentParser:
 
 # Arranca el servidor con el transporte de la configuración (bloquea hasta que termine).
 def ejecutar(config: Configuracion) -> None:
+    validar_arranque(config)
     servidor = crear_servidor(config)
     if config.transporte == "http":
         servidor.run(transport="http", show_banner=False, host=config.host, port=config.puerto)
