@@ -4,7 +4,7 @@ import math
 import re
 from datetime import date, datetime
 
-from convertitodo_mcp.blocks.planilla import TipoColumna, Valor
+from convertitodo_mcp.blocks.planilla import TipoColumna, ValorSimple
 from convertitodo_mcp.errores import ErrorArgumento
 
 ValorCelda = bool | int | float | str | date | datetime | None
@@ -48,7 +48,7 @@ def _texto_a_numero(texto: str) -> int | float | None:
     return int(limpio)
 
 
-def _numero(valor: Valor) -> int | float | None:
+def _numero(valor: ValorSimple) -> int | float | None:
     if isinstance(valor, bool):
         return None
     if isinstance(valor, int | float):
@@ -62,7 +62,7 @@ def _numero(valor: Valor) -> int | float | None:
     return resultado
 
 
-def _fecha(valor: Valor) -> date | datetime | None:
+def _fecha(valor: ValorSimple) -> date | datetime | None:
     if not isinstance(valor, str):
         return None
     texto = valor.strip()
@@ -99,7 +99,7 @@ _ESPERADO: dict[TipoColumna, str] = {
 }
 
 
-def convertir_valor(valor: Valor, tipo: TipoColumna, ubicacion: str) -> ValorCelda:
+def convertir_valor(valor: ValorSimple, tipo: TipoColumna, ubicacion: str) -> ValorCelda:
     """Devuelve el valor con su tipo real; un número nunca queda guardado como texto."""
     if valor is None or (isinstance(valor, str) and not valor.strip() and tipo != "texto"):
         return None

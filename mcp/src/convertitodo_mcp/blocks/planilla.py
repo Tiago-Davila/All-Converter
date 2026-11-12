@@ -11,8 +11,25 @@ _CARACTERES_PROHIBIDOS_HOJA = frozenset(":\\/?*[]")
 
 TipoColumna = Literal["texto", "numero", "entero", "moneda", "porcentaje", "fecha"]
 
-# Valor de una celda tal como lo envía el modelo; el tipo de la columna decide cómo se guarda.
-Valor = bool | int | float | str | None
+
+# Fórmula explícita: es la única forma de que una celda calcule algo.
+class Formula(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    formula: str = Field(
+        min_length=1,
+        max_length=8192,
+        description=(
+            "Fórmula de Excel con funciones en inglés y coma entre argumentos, por ejemplo "
+            "'=SUM(B2:B10)' o \"='Otra hoja'!A1*2\"."
+        ),
+    )
+
+
+# Valor literal de una celda; el tipo de la columna decide cómo se guarda.
+ValorSimple = bool | int | float | str | None
+# Valor de celda tal como lo envía el modelo: literal o fórmula.
+Valor = ValorSimple | Formula
 
 
 # Columna de una hoja: nombre del encabezado, tipo de dato, formato y ancho.

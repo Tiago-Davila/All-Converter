@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 
-from convertitodo_mcp.blocks.planilla import Planilla, TipoColumna, Valor
+from convertitodo_mcp.blocks.planilla import Planilla, TipoColumna, ValorSimple
 from convertitodo_mcp.errores import ErrorArgumento, ErrorLimiteExcedido
 from convertitodo_mcp.render.xlsx import renderizar_xlsx
 from convertitodo_mcp.render.xlsx_valores import convertir_valor
@@ -88,7 +88,7 @@ def test_tipos_reales_y_formatos_por_defecto(tmp_path: Path) -> None:
         ("  ", "texto", "  "),
     ],
 )
-def test_convierte_valores(valor: Valor, tipo: TipoColumna, esperado: object) -> None:
+def test_convierte_valores(valor: ValorSimple, tipo: TipoColumna, esperado: object) -> None:
     assert convertir_valor(valor, tipo, "la celda") == esperado
 
 
@@ -107,7 +107,7 @@ def test_convierte_valores(valor: Valor, tipo: TipoColumna, esperado: object) ->
         ("quince %", "porcentaje"),
     ],
 )
-def test_rechaza_valores_que_no_corresponden_al_tipo(valor: Valor, tipo: TipoColumna) -> None:
+def test_rechaza_valores_que_no_corresponden_al_tipo(valor: ValorSimple, tipo: TipoColumna) -> None:
     with pytest.raises(ErrorArgumento, match="la celda"):
         convertir_valor(valor, tipo, "la celda")
 
