@@ -27,3 +27,22 @@ def test_renderizar_bloques_basicos() -> None:
     texto = "\n".join(pagina.extract_text() for pagina in pdf.pages)
     for esperado in ("Título & prueba", "<etiqueta>", "Primero", "Celda", "a < b", "Cita"):
         assert esperado in texto
+
+
+def test_tabla_larga_repite_encabezado() -> None:
+    documento = Documento.model_validate(
+        {
+            "bloques": [
+                {
+                    "tipo": "tabla",
+                    "encabezado": ["Encabezado único", "Detalle"],
+                    "filas": [[f"Fila {indice}", "Contenido"] for indice in range(80)],
+                }
+            ]
+        }
+    )
+    pdf = PdfReader(BytesIO(renderizar_pdf(documento.bloques)))
+    assert len(pdf.pages) > 1
+    textos = [pagina.extract_text() for pagina in pdf.pages]
+    assert all("Encabezado único" in texto for texto in textos)
+    assert "Fila 79" in textos[-1]

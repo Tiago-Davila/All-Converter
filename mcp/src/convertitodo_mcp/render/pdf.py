@@ -61,6 +61,8 @@ def _lista(lista: Lista, base: ParagraphStyle, nivel: int = 0) -> list[Flowable]
 def renderizar_pdf(bloques: Sequence[Bloque]) -> bytes:
     """Devuelve un PDF en memoria a partir de los bloques indicados."""
     registrar_fuentes()
+    salida = BytesIO()
+    documento = SimpleDocTemplate(salida)
     normal = ParagraphStyle("normal", fontName=NORMAL, fontSize=10, leading=15, spaceAfter=8)
     contenido: list[Flowable] = []
     for bloque in bloques:
@@ -86,8 +88,24 @@ def renderizar_pdf(bloques: Sequence[Bloque]) -> bytes:
         elif isinstance(bloque, Tabla):
             filas = ([bloque.encabezado] if bloque.encabezado else []) + bloque.filas
             if filas and filas[0]:
-                celdas = [[Paragraph(_texto(celda), normal) for celda in fila] for fila in filas]
-                tabla = Table(celdas, hAlign="LEFT")
+                cabecera = ParagraphStyle("cabecera", parent=normal, fontName=NEGRITA)
+                celdas = [
+                    [
+                        Paragraph(
+                            _texto(celda), cabecera if bloque.encabezado and indice == 0 else normal
+                        )
+                        for celda in fila
+                    ]
+                    for indice, fila in enumerate(filas)
+                ]
+                # El frame predeterminado resta 6 puntos de padding en cada lado.
+                ancho_columna = (documento.width - 12) / len(filas[0])
+                tabla = Table(
+                    celdas,
+                    colWidths=[ancho_columna] * len(filas[0]),
+                    repeatRows=1 if bloque.encabezado else 0,
+                    hAlign="LEFT",
+                )
                 tabla.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.5, colors.grey)]))
                 contenido.append(tabla)
         elif isinstance(bloque, Codigo):
@@ -97,6 +115,5 @@ def renderizar_pdf(bloques: Sequence[Bloque]) -> bytes:
             contenido.append(PageBreak())
         elif isinstance(bloque, Imagen):
             raise ValueError("Las imágenes requieren un almacén de archivos.")
-    salida = BytesIO()
-    SimpleDocTemplate(salida).build(contenido)
+    documento.build(contenido)
     return salida.getvalue()
