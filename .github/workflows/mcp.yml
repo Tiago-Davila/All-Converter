@@ -1,0 +1,57 @@
+name: MCP
+
+on:
+  push:
+    paths:
+      - "mcp/**"
+      - "all-converter/tests/fixtures/**"
+      - ".github/workflows/mcp.yml"
+  pull_request:
+    paths:
+      - "mcp/**"
+      - "all-converter/tests/fixtures/**"
+      - ".github/workflows/mcp.yml"
+
+permissions:
+  contents: read
+
+# Cancela corridas viejas de la misma ref
+concurrency:
+  group: mcp-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  calidad:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: mcp
+    steps:
+      - name: Clonar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: mcp/uv.lock
+
+      # Lee la versión desde mcp/.python-version
+      - name: Instalar Python 3.12
+        run: uv python install
+
+      - name: Sincronizar dependencias
+        run: uv sync --locked
+
+      - name: Lint (ruff check)
+        run: uv run ruff check .
+
+      - name: Formato (ruff format)
+        run: uv run ruff format --check .
+
+      - name: Tipos (mypy)
+        run: uv run mypy
+
+      - name: Tests (pytest)
+        run: uv run pytest
