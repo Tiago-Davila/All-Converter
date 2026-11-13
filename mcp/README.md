@@ -4,10 +4,11 @@ Servidor MCP en Python para que un modelo local (llama-server, OpenCode) pueda *
 Excel** a partir de Markdown o bloques estructurados, **leer documentos** y **convertir entre
 formatos**. Corre en la máquina del usuario o en su red local.
 
-> **Estado actual: fase 6.** El servidor crea PDF y Word, edita copias de Word y consulta
-> documentos con `info_documento`, `leer_documento` y `buscar_en_documento` por stdio y HTTP.
-> Por HTTP exige un token Bearer y permite subir y descargar archivos (`POST /files`,
-> `GET /files/{id}`). Las demás conversiones y la creación de Excel están pendientes.
+> **Estado actual: fases 1 a 6 completas.** El servidor crea PDF, Word y Excel, edita copias
+> de Word y Excel y consulta documentos con `info_documento`, `leer_documento` y
+> `buscar_en_documento` por stdio y HTTP. Por HTTP exige un token Bearer y permite subir y
+> descargar archivos (`POST /files`, `GET /files/{id}`). Las conversiones entre formatos están
+> pendientes.
 > Hoja de ruta completa: issues #104 a #113.
 
 ---
@@ -99,6 +100,8 @@ Si hay un error de configuración, el servidor lo explica en stderr y termina co
 | `crear_pdf` | Crea un PDF a partir de Markdown o bloques y devuelve `id`, `nombre`, `paginas` y `url`. |
 | `crear_docx` | Crea un Word editable con Markdown o bloques; devuelve `id`, `nombre` y `url`. |
 | `editar_docx` | Edita una copia de un Word por id; conserva el original y devuelve `id`, `nombre` y `url`. |
+| `crear_xlsx` | Crea un Excel con hojas tipadas, una tabla Markdown o un CSV; devuelve `id`, `nombre`, `hojas` y `url`. |
+| `editar_xlsx` | Edita una copia de un Excel por id: agrega filas u hojas y escribe celdas; devuelve `id`, `nombre`, `hojas` y `url`. |
 | `info_documento` | Consulta tipo, tamaño en bytes, páginas y hojas sin extraer todo el texto. |
 | `leer_documento` | Lee una página virtual de Markdown, con origen y continuación. |
 | `buscar_en_documento` | Busca texto literal sin distinguir mayúsculas y devuelve fragmentos acotados. |
@@ -187,6 +190,115 @@ runs y conserva los demás nodos y formatos; el texto nuevo hereda el formato de
 la coincidencia. No busca entre párrafos. `agregar_seccion` agrega un título y sus bloques al
 final; no crea una sección de página distinta. `agregar_tabla` agrega una tabla al final.
 Los límites y el timeout también se aplican a la edición.
+
+### Crear un Excel
+
+`crear_xlsx` recibe `titulo` y exactamente una fuente: `hojas`, `markdown` o `csv`.
+
+```json
+{
+  "titulo": "Ventas 2026",
+  "hojas": [
+    {
+      "nombre": "Ventas",
+      "columnas": [
+        {"nombre": "Producto"},
+        {"nombre": "Cantidad", "tipo": "entero"},
+        {"nombre": "Precio", "tipo": "moneda"},
+        {"nombre": "Subtotal", "tipo": "moneda"},
+        {"nombre": "Fecha", "tipo": "fecha", "ancho": 14}
+      ],
+      "filas": [
+        ["Café", 2, "1.500,50", {"formula": "=B2*C2"}, "2026-11-12"],
+        ["Té", 5, 800, {"formula": "=B3*C3"}, "13/11/2026"]
+      ],
+      "fila_totales": true,
+      "formato_condicional": [{"columna": "Subtotal", "operador": "mayor", "valor": 3000}],
+      "tabla": "Ventas2026"
+    }
+  ],
+  "opciones": {"simbolo_moneda": "$", "autofiltro": true}
+}
+```
+
+Cada columna tiene `nombre`, `tipo`, `formato` opcional (código numérico de Excel) y `ancho`
+opcional. Cada fila tiene un valor por columna; `null` deja la celda vacía. Los tipos guardan
+valores reales, nunca números como texto:
+
+| Tipo | Acepta | Formato por defecto |
+|---|---|---|
+| `texto` | Texto; un número JSON se conserva como número. | General |
+| `numero` | `1234.5`, `"1.234,5"`, `"1,234.5"`. | `#,##0.00` |
+| `entero` | Números sin parte decimal. | `#,##0` |
+| `moneda` | Números, con símbolo opcional (`"$ 1.500,50"`). | `"$" #,##0.00` |
+| `porcentaje` | Fracciones (`0.15`) o texto con `%` (`"15 %"`). | `0.00%` |
+| `fecha` | `AAAA-MM-DD`, `DD/MM/AAAA` u hora (`AAAA-MM-DDTHH:MM`); desde 1900, sin zona horaria. | `dd/mm/yyyy` |
+
+En un texto con un solo separador, la coma es decimal y el punto también: `"1.200"` vale 1,2.
+Para miles usá `"1.200,0"` o el número JSON `1200`. Un valor que no corresponde al tipo devuelve
+un error con la hoja, fila y columna.
+
+Solo calcula una celda con `{"formula": "..."}`. Las fórmulas usan nombres de función en inglés
+(`SUM`, no `SUMA`) y coma entre argumentos. Se validan la sintaxis, los paréntesis, que la
+función exista y que cada referencia apunte a una hoja o tabla de esta planilla dentro de los
+límites de Excel. Se rechazan los libros externos y las funciones `CELL`, `HYPERLINK`,
+`INDIRECT`, `INFO` y `RTD`. Un texto que empieza con `=`, `+`, `-`, `@`, tabulación o retorno
+y no llega como fórmula se guarda como texto, con un apóstrofo invisible, para evitar la
+inyección de fórmulas.
+
+`opciones` controla `estilo_encabezado`, `congelar_encabezado`, `autofiltro` y
+`ancho_automatico` (todos activados por defecto) y `simbolo_moneda`. Los códigos de formato son
+los estándar de Excel: la aplicación muestra coma decimal y punto de miles según la
+configuración regional del equipo. Cada hoja admite tres extras:
+
+- `fila_totales`: agrega una fila `Total` con `SUBTOTAL(109, …)` para las columnas `numero`,
+  `entero` y `moneda`. Ignora las filas ocultas por filtros.
+- `formato_condicional`: hasta 50 reglas por hoja sobre columnas numéricas. Los operadores son
+  `mayor`, `menor`, `mayor_igual`, `menor_igual`, `igual`, `distinto` y `entre` (con `valor2`),
+  y el color se indica en hexadecimal (`RRGGBB`).
+- `tabla`: crea una tabla de Excel con nombre sobre el encabezado y los datos. Las fórmulas
+  pueden usar referencias como `Ventas2026[Precio]`. La tabla trae su propio filtro.
+
+Como entrada rápida, `markdown` acepta un texto con exactamente una tabla y `csv` un texto con
+encabezado separado por coma, punto y coma o tabulación. Los dos crean una hoja `Hoja1` e
+infieren el tipo de cada columna. Los códigos con ceros a la izquierda, los teléfonos y los
+números de más de 15 dígitos quedan como texto.
+
+### Editar un Excel
+
+`editar_xlsx` recibe `archivo` (id de un XLSX subido o generado) y una lista no vacía de
+`operaciones`, que se aplican en orden. Siempre guarda una copia nueva y conserva el original.
+
+```json
+{
+  "archivo": "id-del-xlsx",
+  "operaciones": [
+    {"tipo": "agregar_filas", "hoja": "Ventas", "filas": [["Mate", "1.200,50", "14/11/2026"]]},
+    {"tipo": "escribir_celdas", "hoja": "Ventas",
+     "celdas": [{"celda": "B2", "valor": 1600}, {"celda": "F1", "valor": {"formula": "=SUM(B:B)"}}]},
+    {"tipo": "agregar_hoja", "hoja": {"nombre": "Resumen",
+     "columnas": [{"nombre": "Total", "tipo": "moneda"}],
+     "filas": [[{"formula": "=SUM(Ventas2026[Subtotal])"}]]}}
+  ]
+}
+```
+
+- `agregar_filas` escribe debajo de la última fila con datos. Si la hoja termina en una fila de
+  totales generada por `crear_xlsx`, esa fila baja y sus `SUBTOTAL` incluyen las filas nuevas.
+  Las tablas, el autofiltro y el formato condicional que terminaban en la última fila de datos
+  se extienden.
+- `escribir_celdas` escribe en referencias como `B3`. No modifica los encabezados de una tabla
+  de Excel ni las celdas internas de un rango combinado.
+- `agregar_hoja` usa el mismo esquema de hoja que `crear_xlsx`, con las opciones de formato por
+  defecto.
+
+Los valores nuevos toman el tipo, el formato y el estilo de la celda que les sirve de modelo:
+la de la fila anterior en `agregar_filas`, y la propia celda o la de arriba si está vacía en
+`escribir_celdas`. Por eso `"1.200,50"` se guarda como número en una columna numérica. Las
+fórmulas y la protección contra inyección funcionan igual que al crear. Las fórmulas existentes
+que apuntaban a la fila de totales movida no se actualizan; corregilas con `escribir_celdas`.
+openpyxl no conserva gráficos ni imágenes del libro original, y los vínculos externos y las
+macros nunca se cargan.
 
 ### Leer y buscar documentos
 
@@ -347,6 +459,11 @@ Este comando ejecuta un solo test con un worker y limpia su archivo de prueba te
 Comprueba el motor de conversión, sin abrir la interfaz. La conversión web tiene fidelidad
 parcial: no conserva el diseño exacto ni todos los niveles de listas anidadas. No reemplaza
 una revisión nativa del documento en Word.
+
+Los tests de Excel releen cada XLSX generado con openpyxl para verificar tipos, formatos y
+fórmulas. Si `soffice` (LibreOffice) está instalado, además lo recalculan en modo headless con un
+perfil temporal y comprueban los valores de las fórmulas; sin LibreOffice esos tests se omiten,
+como en la CI.
 
 Los tests reutilizan los fixtures reales de la app web (`all-converter/tests/fixtures/`), así que
 el MCP y la app se prueban contra los mismos archivos. La CI corre estos mismos comandos en
