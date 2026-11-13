@@ -12,6 +12,7 @@ from convertitodo_mcp.errores import herramienta_segura
 from convertitodo_mcp.server.archivos_http import registrar_rutas_de_archivos
 from convertitodo_mcp.server.auth import crear_verificador
 from convertitodo_mcp.server.config import Configuracion
+from convertitodo_mcp.server.pdf import crear_herramienta_pdf
 from convertitodo_mcp.storage.almacen import Almacen
 from convertitodo_mcp.storage.limpieza import crear_ciclo_de_vida
 
@@ -57,6 +58,18 @@ def crear_servidor(config: Configuracion) -> FastMCP:
         ),
         annotations=ToolAnnotations(
             read_only_hint=True, idempotent_hint=True, open_world_hint=False
+        ),
+    )
+    servidor.tool(
+        crear_herramienta_pdf(almacen, config),
+        name="crear_pdf",
+        description=(
+            "Crea un PDF local. Indicá titulo y exactamente uno de markdown o bloques; "
+            "opciones permite tamaño, orientación, márgenes en mm, metadatos y numeración. "
+            "Devuelve id, nombre, páginas y URL relativa de descarga."
+        ),
+        annotations=ToolAnnotations(
+            read_only_hint=False, idempotent_hint=False, open_world_hint=False
         ),
     )
     return servidor
