@@ -58,7 +58,7 @@ def detectar_tipo(datos: bytes, nombre: str) -> TipoDocumento:
     return "csv" if extension == ".csv" else "html"
 
 
-def _validar_paquete(datos: bytes, config: Configuracion) -> None:
+def validar_paquete(datos: bytes, config: Configuracion) -> None:
     try:
         with ZipFile(BytesIO(datos)) as paquete:
             miembros = paquete.infolist()
@@ -127,5 +127,5 @@ def cargar_entrada(archivo: str, almacen: Almacen, config: Configuracion) -> Ent
     verificar_tamano(len(datos), config, que="el documento")
     tipo = detectar_tipo(datos, guardado.nombre)
     if tipo in {"docx", "xlsx", "pptx"}:
-        _validar_paquete(datos, config)
+        validar_paquete(datos, config)
     return EntradaDocumento(guardado.nombre, tipo, datos)

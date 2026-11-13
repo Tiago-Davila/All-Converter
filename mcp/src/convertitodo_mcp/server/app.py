@@ -12,6 +12,7 @@ from convertitodo_mcp.errores import herramienta_segura
 from convertitodo_mcp.server.archivos_http import registrar_rutas_de_archivos
 from convertitodo_mcp.server.auth import crear_verificador
 from convertitodo_mcp.server.config import Configuracion
+from convertitodo_mcp.server.convertir import crear_herramienta_convertir, crear_herramienta_listar
 from convertitodo_mcp.server.docx import crear_herramienta_docx, crear_herramienta_editar_docx
 from convertitodo_mcp.server.lectura import (
     crear_herramienta_buscar,
@@ -27,7 +28,8 @@ NOMBRE_SERVIDOR = "ConvertiTodo"
 
 INSTRUCCIONES = (
     "Servidor de ConvertiTodo: crea documentos PDF, Word y Excel a partir de Markdown o "
-    "bloques estructurados, lee documentos existentes y convierte entre formatos. "
+    "bloques estructurados, lee documentos existentes y convierte entre formatos (primero"
+    " listar_conversiones, luego convertir). "
     "Todo el procesamiento ocurre en la máquina del usuario. Usá la herramienta ping para "
     "comprobar que el servidor responde."
 )
@@ -169,6 +171,32 @@ def crear_servidor(config: Configuracion) -> FastMCP:
         ),
         annotations=ToolAnnotations(
             read_only_hint=True, idempotent_hint=True, open_world_hint=False
+        ),
+    )
+    servidor.tool(
+        crear_herramienta_listar(almacen, config),
+        name="listar_conversiones",
+        description=(
+            "Llamala antes de convertir. Sin argumentos lista cada tipo de archivo con sus "
+            "formatos de destino, opciones y si la fidelidad es parcial; con archivo (id) "
+            'muestra solo los de ese archivo. Ejemplo: listar_conversiones(archivo="<id>").'
+        ),
+        annotations=ToolAnnotations(
+            read_only_hint=True, idempotent_hint=True, open_world_hint=False
+        ),
+    )
+    servidor.tool(
+        crear_herramienta_convertir(almacen, config),
+        name="convertir",
+        description=(
+            "Convierte un archivo subido (id) a otro formato: PDF, Word, Excel, CSV, JSON, "
+            "imágenes, audio y MP4 a audio. Devuelve los archivos nuevos (id, nombre, tamano, "
+            "url) y un aviso si la fidelidad es parcial. opciones solo admite las que aplican "
+            'a esa conversión. Ejemplo: convertir(archivo="<id>", formato_destino="docx"). '
+            "Si el destino no existe, el error lista los válidos."
+        ),
+        annotations=ToolAnnotations(
+            read_only_hint=False, idempotent_hint=False, open_world_hint=False
         ),
     )
     return servidor
