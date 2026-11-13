@@ -4,7 +4,7 @@ Servidor MCP en Python para que un modelo local (llama-server, OpenCode) pueda *
 Excel** a partir de Markdown o bloques estructurados, **leer documentos** y **convertir entre
 formatos**. Corre en la máquina del usuario o en su red local.
 
-> **Estado actual: fase 3.** El servidor ofrece `ping` y `crear_pdf` por stdio y HTTP.
+> **Estado actual: fase 4.** El servidor ofrece `ping`, `crear_pdf`, `crear_docx` y `editar_docx` por stdio y HTTP.
 > Por HTTP exige un token Bearer y permite subir y descargar archivos (`POST /files`,
 > `GET /files/{id}`). Las demás conversiones y la lectura están pendientes.
 > Hoja de ruta completa: issues #104 a #113.
@@ -96,6 +96,8 @@ Si hay un error de configuración, el servidor lo explica en stderr y termina co
 |---|---|
 | `ping` | Sin argumentos. Comprueba que el servidor responde y devuelve `estado` (`ok`), `servidor`, `version` y `hora` (ISO 8601, UTC). Es de solo lectura. |
 | `crear_pdf` | Crea un PDF a partir de Markdown o bloques y devuelve `id`, `nombre`, `paginas` y `url`. |
+| `crear_docx` | Crea un Word editable con Markdown o bloques; devuelve `id`, `nombre` y `url`. |
+| `editar_docx` | Edita una copia de un Word por id; conserva el original y devuelve `id`, `nombre` y `url`. |
 
 
 ### Crear un PDF
@@ -127,6 +129,60 @@ milímetros, `titulo` y `autor` en los metadatos y `numerar_paginas`. Sin títul
 usa el argumento `titulo`; la numeración requiere margen inferior de al menos 10 mm. El resultado
 contiene una URL relativa `/files/{id}`: solo es descargable por HTTP con el token. En stdio no se
 habilita HTTP; el archivo queda en la carpeta `outputs/` del directorio de trabajo hasta su TTL.
+
+### Crear un Word editable
+
+`crear_docx` exige `titulo` (hasta 255 caracteres) y exactamente uno de `markdown` o
+`bloques`, con el mismo modelo de bloques que PDF. Usa estilos nativos de Word para títulos,
+listas y tablas, conservando formato en línea y enlaces clicables. Las imágenes se indican
+por id de un archivo subido.
+
+```json
+{
+  "titulo": "Informe de ventas",
+  "markdown": "## Resumen\n\nTexto con **negrita** y una lista:\n\n- Café\n- Té",
+  "opciones": {
+    "tamano": "A4",
+    "orientacion": "vertical",
+    "margenes": {"superior": 25, "inferior": 25, "izquierdo": 25, "derecho": 25},
+    "tabla_contenido": true
+  }
+}
+```
+
+`tabla_contenido` inserta un campo TOC de Word; actualizá los campos al abrir el archivo
+si Word no lo hace automáticamente. `plantilla` admite el id de un `.docx` subido: conserva
+su contenido y estilos y agrega el documento nuevo al final. Las opciones de página omitidas
+conservan la configuración de la plantilla; sin plantilla se usa A4 vertical con márgenes de
+25 mm. Se rechazan documentos corruptos, macros, objetos incrustados y recursos externos
+activos; los enlaces http/https/mailto sí se conservan. El paquete descomprimido también está
+limitado por `CONVERTITODO_MCP_MAX_MB`; el validador no admite XML UTF-16.
+La descarga y el TTL funcionan igual que en `crear_pdf`, sin habilitar HTTP en stdio.
+
+### Editar un Word
+
+`editar_docx` recibe `archivo` (id de un DOCX subido o generado) y una lista no vacía de
+`operaciones`. Siempre guarda una copia nueva; el archivo original conserva sus bytes.
+
+```json
+{
+  "archivo": "id-del-docx",
+  "operaciones": [
+    {"tipo": "reemplazar_texto", "buscar": "Borrador", "reemplazo": "Versión final"},
+    {"tipo": "agregar_seccion", "titulo": "Conclusiones", "nivel": 1,
+     "bloques": [{"tipo": "parrafo", "texto": "Texto nuevo"}]},
+    {"tipo": "agregar_tabla", "tabla": {"tipo": "tabla",
+     "encabezado": ["Producto", "Unidades"], "filas": [["Café", "120"]]}}
+  ]
+}
+```
+
+El reemplazo es literal, distingue mayúsculas y opera dentro de cada párrafo del cuerpo,
+las tablas, los encabezados y los pies existentes. Encuentra coincidencias repartidas entre
+runs y conserva los demás nodos y formatos; el texto nuevo hereda el formato del inicio de
+la coincidencia. No busca entre párrafos. `agregar_seccion` agrega un título y sus bloques al
+final; no crea una sección de página distinta. `agregar_tabla` agrega una tabla al final.
+Los límites y el timeout también se aplican a la edición.
 
 ---
 
@@ -226,6 +282,18 @@ uv run ruff format --check . # formato
 uv run mypy                  # tipos (estricto)
 uv run pytest                # tests
 ```
+
+Prueba cruzada DOCX → PDF con el conversor de la app web (desde la raíz del repo, con
+las dependencias de `all-converter/` instaladas):
+
+```bash
+node mcp/scripts/verificar-docx-web.mjs /ruta/documento.docx /ruta/resultado.pdf
+```
+
+Este comando ejecuta un solo test con un worker y limpia su archivo de prueba temporal.
+Comprueba el motor de conversión, sin abrir la interfaz. La conversión web tiene fidelidad
+parcial: no conserva el diseño exacto ni todos los niveles de listas anidadas. No reemplaza
+una revisión nativa del documento en Word.
 
 Los tests reutilizan los fixtures reales de la app web (`all-converter/tests/fixtures/`), así que
 el MCP y la app se prueban contra los mismos archivos. La CI corre estos mismos comandos en
