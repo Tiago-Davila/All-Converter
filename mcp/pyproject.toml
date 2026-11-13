@@ -62,7 +62,7 @@ warn_unreachable = true
 
 # Dependencias de runtime sin tipos publicados
 [[tool.mypy.overrides]]
-module = ["reportlab.*", "openpyxl.*"]
+module = ["reportlab.*", "openpyxl.*", "pypdfium2.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
