@@ -4,11 +4,12 @@ Servidor MCP en Python para que un modelo local (llama-server, OpenCode) pueda *
 Excel** a partir de Markdown o bloques estructurados, **leer documentos** y **convertir entre
 formatos**. Corre en la máquina del usuario o en su red local.
 
-> **Estado actual: fases 1 a 6 completas.** El servidor crea PDF, Word y Excel, edita copias
-> de Word y Excel y consulta documentos con `info_documento`, `leer_documento` y
-> `buscar_en_documento` por stdio y HTTP. Por HTTP exige un token Bearer y permite subir y
-> descargar archivos (`POST /files`, `GET /files/{id}`). Las conversiones entre formatos están
-> pendientes.
+> **Estado actual: fases 1 a 6 completas y conversiones en curso (fase 7).** El servidor crea
+> PDF, Word y Excel, edita copias de Word y Excel, consulta documentos con `info_documento`,
+> `leer_documento` y `buscar_en_documento` y convierte entre formatos con `convertir` y
+> `listar_conversiones`, por stdio y HTTP. Por HTTP exige un token Bearer y permite subir y
+> descargar archivos (`POST /files`, `GET /files/{id}`). Falta el barrido de pruebas de cada
+> conversión con todos los fixtures.
 > Hoja de ruta completa: issues #104 a #113.
 
 ---
@@ -105,6 +106,8 @@ Si hay un error de configuración, el servidor lo explica en stderr y termina co
 | `info_documento` | Consulta tipo, tamaño en bytes, páginas y hojas sin extraer todo el texto. |
 | `leer_documento` | Lee una página virtual de Markdown, con origen y continuación. |
 | `buscar_en_documento` | Busca texto literal sin distinguir mayúsculas y devuelve fragmentos acotados. |
+| `listar_conversiones` | Lista los formatos de destino posibles, con opciones y fidelidad; con un id, solo los de ese archivo. |
+| `convertir` | Convierte un archivo por id a otro formato y devuelve los archivos nuevos (`id`, `nombre`, `tamano`, `url`) y un `aviso` si la fidelidad es parcial. |
 
 
 ### Crear un PDF
@@ -348,6 +351,66 @@ se admiten hipervínculos http/https/mailto como datos.
 Un PDF sin texto extraíble pide OCR local; no se sube a un servicio. Los PDF protegidos requieren
 una copia desbloqueada y los corruptos deben exportarse otra vez. Consultar metadatos de un PDF
 escaneado sí permite conocer su cantidad de páginas. Los archivos originales no se modifican.
+
+### Conversiones
+
+Primero subí el archivo y llamá a `listar_conversiones` (sin argumentos lista todo; con
+`{"archivo": "id"}` solo lo que admite ese archivo). Después:
+
+```json
+{"archivo": "id-del-archivo", "formato_destino": "docx", "opciones": {"paginas": "1-3"}}
+```
+
+`formato_destino` no distingue mayúsculas ni acepta punto inicial, y entiende `jpeg`, `markdown`,
+`excel` y `word`. El tipo del origen sale de la firma del archivo, no de la extensión (solo CSV,
+JSON y Markdown, que no tienen firma, usan la extensión como respaldo). Si el destino no existe
+para ese archivo, el error lista los destinos válidos. Devuelve siempre una lista de `archivos`
+(por ejemplo una imagen por página o un CSV por hoja).
+
+| Origen | Destinos |
+|---|---|
+| PDF | `pdf` (unir, dividir o rotar), `png`, `jpg`, `docx`, `md` |
+| Word (`docx`) | `pdf`, `xlsx` |
+| Excel (`xlsx`) | `csv`, `json`, `pdf` |
+| `csv` | `xlsx`, `json`, `pdf` |
+| `json` | `xlsx`, `csv` |
+| `png`, `jpg`, `webp` | los otros dos formatos de imagen, el mismo formato (recomprimir o redimensionar) y `pdf` |
+| `mp3`, `wav`, `ogg`, `m4a` | los otros tres formatos de audio (requiere ffmpeg) |
+| `mp4` | `mp3`, `wav`, `ogg`, `m4a`: extrae el audio (requiere ffmpeg) |
+| Markdown (`md`) | ninguno: usá `crear_pdf` o `crear_docx` pasando el texto |
+
+Las opciones son opcionales y cada conversión acepta solo algunas; una opción que no aplica
+devuelve un error que dice cuáles sí acepta. Si no se indican, rigen los valores por defecto de
+cada conversión.
+
+| Opción | Aplica a | Detalle |
+|---|---|---|
+| `operacion` | PDF a PDF (obligatoria) | `unir`, `dividir` o `rotar`. |
+| `archivos_adicionales` | `unir` e imagen a PDF | Ids de los PDF que siguen al principal, o de más imágenes (una página por imagen), en orden. |
+| `rangos` | `dividir` | Por ejemplo `"1-3,5"`: un PDF por rango; sin rangos, uno por página. |
+| `paginas` | `rotar` y PDF a imágenes | Por ejemplo `"1-3,5"`; sin valor, todas. |
+| `grados` | `rotar` (obligatoria) | 90, 180 o 270, en sentido horario. |
+| `dpi` | PDF a imágenes | De 36 a 300. |
+| `calidad` | destino `jpg` o `webp` | De 1 a 100. |
+| `ancho_maximo` | imágenes | Reduce en píxeles; nunca agranda. |
+
+**Fidelidad declarada.** PDF a Word, PDF a Markdown, Word a PDF y Word a Excel tienen fidelidad
+parcial y la respuesta trae un `aviso`: PDF a Word y a Markdown conservan solo texto y estructura
+inferida (sin diseño, columnas, imágenes ni tablas); Word a PDF no conserva fuentes, márgenes ni
+imágenes flotantes; Word a Excel pasa solo las tablas. Un PDF escaneado no tiene texto: se puede
+pasar a imágenes, pero no a Word ni a Markdown. Las imágenes se convierten sin metadatos
+(EXIF, GPS, ICC) y no se aceptan PNG o WebP animados.
+
+**Audio y video.** Las conversiones de `mp3`, `wav`, `ogg`, `m4a` y `mp4` requieren que
+**ffmpeg esté instalado en el servidor** (con los códecs del destino). Sin ffmpeg, `listar_conversiones`
+las marca con `disponible: false` y `ffmpeg_disponible: false`, y `convertir` devuelve un error.
+
+**Límites.** Rigen los de entrada (`CONVERTITODO_MCP_MAX_MB`, filas, bloques) y el tiempo
+(`CONVERTITODO_MCP_TIMEOUT_S`, también para ffmpeg). Además, la salida total no puede superar 4
+veces `CONVERTITODO_MCP_MAX_MB` ni 200 archivos; si se supera, no se guarda nada y el error sugiere
+pedir menos páginas.
+
+---
 
 ---
 
