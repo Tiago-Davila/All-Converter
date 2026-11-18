@@ -1,0 +1,38 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "llama-local/convertitodo-local",
+  "providers": {
+    "llama-local": {
+      "name": "llama-server local",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "baseURL": "http://127.0.0.1:8080/v1"
+      },
+      "models": {
+        "convertitodo-local": {
+          "name": "ConvertiTodo local",
+          "capabilities": {
+            "tools": true
+          }
+        }
+      }
+    }
+  },
+  "policies": [
+    { "action": "provider.use", "resource": "*", "effect": "deny" },
+    { "action": "provider.use", "resource": "llama-local", "effect": "allow" }
+  ],
+  "mcp": {
+    "servers": {
+      "convertitodo": {
+        "type": "remote",
+        "url": "http://127.0.0.1:8765/mcp",
+        "oauth": false,
+        "codemode": false,
+        "headers": {
+          "Authorization": "Bearer {env:CONVERTITODO_MCP_TOKEN}"
+        }
+      }
+    }
+  }
+}
