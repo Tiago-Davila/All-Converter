@@ -9,16 +9,19 @@ import React, { useEffect, useRef, useState } from 'react'
 export interface Announcement {
   readonly done: number
   readonly failed: number
+  /** Cancelados por el usuario (006 FR-016). Opcional: los lotes viejos no lo informaban. */
+  readonly cancelled?: number
 }
 
 /**
  * Genera el texto de anuncio consolidado.
- * { done: 7, failed: 3 } → "7 archivos listos, 3 con error"
+ * { done: 7, failed: 3, cancelled: 2 } → "7 archivos listos, 3 con error, 2 cancelados"
  */
 export function announcementText(a: Announcement): string {
   const parts: string[] = []
   if (a.done > 0) parts.push(`${a.done} ${a.done === 1 ? 'archivo listo' : 'archivos listos'}`)
   if (a.failed > 0) parts.push(`${a.failed} con error`)
+  if (a.cancelled && a.cancelled > 0) parts.push(`${a.cancelled} ${a.cancelled === 1 ? 'cancelado' : 'cancelados'}`)
   return parts.join(', ')
 }
 
@@ -39,7 +42,7 @@ export function LiveRegion({ announcement }: LiveRegionProps): React.ReactElemen
     if (announcement === null) return
     // Solo actualiza si el anuncio cambió (evita re-anuncios del mismo lote).
     const prev = prevRef.current
-    if (prev?.done === announcement.done && prev?.failed === announcement.failed) return
+    if (prev?.done === announcement.done && prev?.failed === announcement.failed && prev?.cancelled === announcement.cancelled) return
     prevRef.current = announcement
     setText(announcementText(announcement))
   }, [announcement])

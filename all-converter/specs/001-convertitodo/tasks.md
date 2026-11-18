@@ -127,7 +127,7 @@ respectivos.
 **Motivo**: enmienda del 2026-07-13 (ver `spec.md` §Enmiendas). El waveform pasa a ser el
 default y la conversión nunca se bloquea.
 
-- [ ] T052 [US5] Reflejar el waveform como default en `src/converters/mp3-to-mp4.ts`: actualizar el texto de `limitation` (hoy sugiere una elección obligatoria: "Elegí una portada propia o generá un waveform local") e invertir el default de `generateWaveform` para que un MP3→MP4 sin opciones produzca un MP4 válido con waveform. Prueba en `tests/converters/mp3-to-mp4.test.ts` que convertir **sin pasar ninguna opción de portada** produce un MP4 válido. Cubre FR-030. (Depende de T038.)
+- [X] T052 [US5] Reflejar el waveform como default en `src/converters/mp3-to-mp4.ts`: actualizar el texto de `limitation` (hoy sugiere una elección obligatoria: "Elegí una portada propia o generá un waveform local") e invertir el default de `generateWaveform` para que un MP3→MP4 sin opciones produzca un MP4 válido con waveform. Prueba en `tests/converters/mp3-to-mp4.test.ts` que convertir **sin pasar ninguna opción de portada** produce un MP4 válido. Cubre FR-030. (Depende de T038.)
 
 ## Estrategia de entrega
 
