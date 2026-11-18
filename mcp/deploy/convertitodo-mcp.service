@@ -1,0 +1,22 @@
+# All-Converter #111 / T062
+[Unit]
+Description=Servidor MCP local de ConvertiTodo
+
+[Service]
+Type=exec
+User=convertitodo-mcp
+Group=convertitodo-mcp
+WorkingDirectory=/opt/convertitodo/All-Converter/mcp
+EnvironmentFile=/etc/convertitodo-mcp/environment
+StateDirectory=convertitodo-mcp
+StateDirectoryMode=0700
+Environment=CONVERTITODO_MCP_WORKDIR=%S/convertitodo-mcp
+ExecStart=/opt/convertitodo/All-Converter/mcp/.venv/bin/convertitodo-mcp --transporte http --host 127.0.0.1 --puerto 8765
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=yes
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+WantedBy=multi-user.target

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
@@ -19,6 +20,7 @@ _V_TRANSPORTE = PREFIJO + "TRANSPORTE"
 _V_HOST = PREFIJO + "HOST"
 _V_PUERTO = PREFIJO + "PORT"
 _V_TOKEN = PREFIJO + "TOKEN"
+_V_ORIGEN_UI = PREFIJO + "ORIGEN_UI"
 _V_CARPETA = PREFIJO + "WORKDIR"
 _V_TTL = PREFIJO + "TTL_MINUTOS"
 _V_MAX_MB = PREFIJO + "MAX_MB"
@@ -31,6 +33,7 @@ _VARIABLES_VALIDAS = (
     _V_HOST,
     _V_PUERTO,
     _V_TOKEN,
+    _V_ORIGEN_UI,
     _V_CARPETA,
     _V_TTL,
     _V_MAX_MB,
@@ -48,6 +51,7 @@ class Configuracion(BaseModel):
     host: str = "127.0.0.1"
     puerto: int = 8765
     token: SecretStr | None = None
+    origen_ui: str | None = None
     carpeta_trabajo: Path
     ttl_minutos: int = 60
     max_mb: int = 25
@@ -115,6 +119,21 @@ def _token(entorno: Mapping[str, str]) -> SecretStr | None:
     return SecretStr(valor)
 
 
+# Acepta un único origen explícito, sin comodines, credenciales ni rutas.
+def _origen_ui(entorno: Mapping[str, str]) -> str | None:
+    valor = entorno.get(_V_ORIGEN_UI, "").strip()
+    if not valor:
+        return None
+    coincidencia = re.fullmatch(
+        r"https?://(?:[a-zA-Z0-9.-]+|\[[a-fA-F0-9:]+\])(?::([0-9]{1,5}))?", valor
+    )
+    if coincidencia is None or (
+        coincidencia[1] is not None and not 1 <= int(coincidencia[1]) <= 65535
+    ):
+        raise _error(_V_ORIGEN_UI, "debe ser un origen HTTP(S) exacto", "http://127.0.0.1:8080")
+    return valor
+
+
 # Carga y valida la configuración desde el entorno indicado o desde os.environ.
 def cargar_configuracion(entorno: Mapping[str, str] | None = None) -> Configuracion:
     origen: Mapping[str, str] = os.environ if entorno is None else entorno
@@ -151,6 +170,7 @@ def cargar_configuracion(entorno: Mapping[str, str] | None = None) -> Configurac
         host=host,
         puerto=_entero(origen, _V_PUERTO, 8765, 1, 65535, "8765"),
         token=_token(origen),
+        origen_ui=_origen_ui(origen),
         carpeta_trabajo=carpeta,
         ttl_minutos=_entero(origen, _V_TTL, 60, 1, None, "60"),
         max_mb=_entero(origen, _V_MAX_MB, 25, 1, None, "25"),
