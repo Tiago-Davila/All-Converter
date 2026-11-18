@@ -8,7 +8,8 @@ describe('media converters', () => {
   it('declara límites y destinos', () => {
     expect(mp4ToMp3Converter.maxSizeMB).toBe(250)
     expect(mp3ToMp4Converter.to).toBe('mp4')
-    expect(mp3ToMp4Converter.limitation).toMatch(/portada.*waveform/i)
+    // El waveform es el default y la portada es opcional (FR-030): ese orden es el mensaje.
+    expect(mp3ToMp4Converter.limitation).toMatch(/waveform.*portada/i)
     expect(audioConverter.maxSizeMB).toBe(100)
   })
   it('expone únicamente pares compatibles y rechaza identidad', async () => {

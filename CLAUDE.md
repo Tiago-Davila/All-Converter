@@ -20,9 +20,6 @@ que comienzan con `mcp/` o `.github/` son relativas a la raíz del repositorio.
 
 1. Ningún archivo del usuario se envía a ningún servidor, API ni servicio externo.
    Si una solución requiere red para procesar el archivo, está descartada.
-2. Este proyecto se gestiona con Spec-Driven Development (GitHub Spec Kit).
-   La fuente de verdad está en specs/001-convertitodo/. No implementar nada que
-   no esté trazado a una tarea de tasks.md. Una tarea, un diff, un commit.
 3. Toda conversión implementa la interfaz Converter (src/converters/types.ts) y se
    registra en src/converters/registry.ts. La UI solo conoce el registry.
 4. Los conversores NO importan React ni tocan el DOM. Lógica y UI separadas siempre.
@@ -109,14 +106,16 @@ que comienzan con `mcp/` o `.github/` son relativas a la raíz del repositorio.
 
 ## Estilo de trabajo
 
-- Commits  descriptivos en español (conventional commits: feat, fix, test, chore, docs), no agregues coautoria al commit.
-- Ante ambigüedad entre el pedido y la spec, gana la spec; avisar la discrepancia.
+- Commits descriptivos en español (conventional commits: feat, fix, test, chore, docs), sin coautoría.
+- Ante ambigüedad entre el pedido y el plan, preguntar primero. Ante discrepancias con la spec,
+  avisar y seguir la spec.
 - No agregar dependencias nuevas sin justificarlas primero.
 - Crear ramas desde `develop` y dirigir los PRs a `develop`, siguiendo el patrón existente
   `feat/mcp-tNNN-descripcion` para tareas del MCP. Usar `fix/` o `docs/` según el cambio.
 - Una tarea, un diff y un commit. En el PR indicar problema, cambio, issue/tarea y
   validación realizada; mencionar límites relevantes. No declarar checks no ejecutados.
-- Comentarios de código breves en español: explicar decisiones que el código no muestre.
+- Comentarios de código breves en español: una línea arriba del método para explicar decisiones
+  que el código no muestre.
 - Con varios agentes, asignar archivos distintos y centralizar commits e integración en
   el orquestador. Los agentes no ejecutan suites, builds ni instalaciones en paralelo.
   Ejecutar las pruebas una vez al integrar; repetir solo lo necesario si hay fallos o

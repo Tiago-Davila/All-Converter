@@ -1,4 +1,4 @@
-import type { Converter, DetectedFileType } from './types'
+import type { Converter, DetectedFileType, FileEntry } from './types'
 import { imageConverter } from './image'
 import { imagesToPdfConverter } from './images-to-pdf'
 import { spreadsheetConverter } from './spreadsheet'
@@ -24,4 +24,26 @@ export function getAvailableConverters(type: DetectedFileType, entries: readonly
 
 export function getConverterTargets(converter: Converter, type: DetectedFileType): readonly string[] {
   return converter.targetsFor?.(type) ?? converter.to.split('|')
+}
+
+export interface CommonChoice { converter: Converter; target: string }
+
+/**
+ * Devuelve los pares (converter, target) que están disponibles para TODOS los archivos del grupo.
+ * Útil para el selector de formato de carpeta: solo muestra formatos que todos puedan producir.
+ * Si el grupo está vacío, devuelve [].
+ */
+export function getCommonTargets(entries: readonly FileEntry[], registry: readonly Converter[] = converters): readonly CommonChoice[] {
+  if (entries.length === 0) return []
+  const choicesForEntry = (entry: FileEntry): CommonChoice[] =>
+    getAvailableConverters(entry.detectedType, registry).flatMap((converter) =>
+      getConverterTargets(converter, entry.detectedType).map((target) => ({ converter, target })))
+
+  const first = choicesForEntry(entries[0])
+  const rest = entries.slice(1)
+  return first.filter((choice) =>
+    rest.every((entry) =>
+      choicesForEntry(entry).some((c) => c.converter.id === choice.converter.id && c.target === choice.target)
+    )
+  )
 }

@@ -13,7 +13,8 @@ import { Icon } from './icons'
 export interface DropzoneUIProps {
   /** true = hay archivos en la cola → modo tira fina. */
   hasFiles: boolean
-  onFiles(files: IncomingFile[]): void
+  /** `skipped` = archivos que el recorrido no exploró por el techo de MAX_SCAN_FILES. */
+  onFiles(files: IncomingFile[], skipped?: number): void
   /** Fondo animado (ShaderBackground) inyectado por App. */
   background?: React.ReactNode
   /** Reporta si hay un drag activo sobre la zona (para la intensidad del shader). */
@@ -66,7 +67,7 @@ export function Dropzone({
         e.preventDefault()
         setDrag(false)
         if (e.dataTransfer.items.length) {
-          void readDroppedItems(e.dataTransfer.items).then(onFiles)
+          void readDroppedItems(e.dataTransfer.items).then(({ files, skipped }) => onFiles(files, skipped))
         } else {
           accept(e.dataTransfer.files)
         }
