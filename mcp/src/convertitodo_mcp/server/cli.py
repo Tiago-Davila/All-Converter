@@ -7,6 +7,8 @@ import sys
 from collections.abc import Sequence
 
 from pydantic import ValidationError
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
 
 from convertitodo_mcp import __version__
 from convertitodo_mcp.errores import ErrorConfiguracion, ErrorConvertiTodo
@@ -28,12 +30,41 @@ def _crear_parser() -> argparse.ArgumentParser:
     return parser
 
 
+# Habilita el acceso directo desde el único origen de la UI configurado.
+def _middleware_ui(origenes: list[str] | None) -> list[Middleware] | None:
+    if not origenes:
+        return None
+    return [
+        Middleware(
+            CORSMiddleware,
+            allow_origins=origenes,
+            allow_methods=["GET", "POST", "DELETE"],
+            allow_headers=[
+                "Authorization",
+                "Content-Type",
+                "Last-Event-ID",
+                "Mcp-Protocol-Version",
+                "Mcp-Session-Id",
+            ],
+            expose_headers=["Mcp-Session-Id"],
+        )
+    ]
+
+
 # Arranca el servidor con el transporte de la configuración (bloquea hasta que termine).
 def ejecutar(config: Configuracion) -> None:
     validar_arranque(config)
     servidor = crear_servidor(config)
     if config.transporte == "http":
-        servidor.run(transport="http", show_banner=False, host=config.host, port=config.puerto)
+        origenes = [config.origen_ui] if config.origen_ui else None
+        servidor.run(
+            transport="http",
+            show_banner=False,
+            host=config.host,
+            port=config.puerto,
+            middleware=_middleware_ui(origenes),
+            allowed_origins=origenes,
+        )
     else:
         servidor.run(transport="stdio", show_banner=False)
 
