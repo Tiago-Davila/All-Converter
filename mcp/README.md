@@ -4,12 +4,12 @@ Servidor MCP en Python para que un modelo local (llama-server, OpenCode) pueda *
 Excel** a partir de Markdown o bloques estructurados, **leer documentos** y **convertir entre
 formatos**. Corre en la máquina del usuario o en su red local.
 
-> **Estado actual: fases 1 a 6 completas y conversiones en curso (fase 7).** El servidor crea
+> **Estado actual: fases 1 a 7 completas; integración con llama-server en curso (fase 8).** El servidor crea
 > PDF, Word y Excel, edita copias de Word y Excel, consulta documentos con `info_documento`,
 > `leer_documento` y `buscar_en_documento` y convierte entre formatos con `convertir` y
 > `listar_conversiones`, por stdio y HTTP. Por HTTP exige un token Bearer y permite subir y
-> descargar archivos (`POST /files`, `GET /files/{id}`). Falta el barrido de pruebas de cada
-> conversión con todos los fixtures.
+> descargar archivos (`POST /files`, `GET /files/{id}`). Las conversiones tienen pruebas de
+> paridad con los fixtures de la app web.
 > Hoja de ruta completa: issues #104 a #113.
 
 ---
@@ -20,7 +20,7 @@ formatos**. Corre en la máquina del usuario o en su red local.
 
 ```bash
 cd mcp
-uv sync
+uv sync --locked
 ```
 
 Las dependencias están fijadas en `pyproject.toml` y `uv.lock`.
@@ -43,6 +43,7 @@ exista (por ejemplo un error de tipeo) hace que el servidor no arranque y expliq
 | `CONVERTITODO_MCP_HOST` | Dirección en la que escucha el transporte HTTP. No puede estar vacía. | `127.0.0.1` |
 | `CONVERTITODO_MCP_PORT` | Puerto del transporte HTTP, de 1 a 65535. | `8765` |
 | `CONVERTITODO_MCP_TOKEN` | Token Bearer que deben enviar los clientes HTTP. Mínimo 16 caracteres; vacío equivale a no definirlo. | Sin valor. Obligatorio para HTTP en cualquier host: sin token el servidor no arranca. En stdio no se usa. |
+| `CONVERTITODO_MCP_ORIGEN_UI` | Origen HTTP(S) exacto del fork de la UI habilitado por CORS, por ejemplo `http://127.0.0.1:8080`. | Sin valor: CORS deshabilitado. |
 | `CONVERTITODO_MCP_WORKDIR` | Carpeta de trabajo, con `uploads/` (entradas) y `outputs/` (resultados). Se expande `~`. | `$XDG_DATA_HOME/convertitodo-mcp` o `~/.local/share/convertitodo-mcp` |
 | `CONVERTITODO_MCP_TTL_MINUTOS` | Minutos tras los cuales se borran automáticamente los archivos viejos (mínimo 1). | `60` |
 | `CONVERTITODO_MCP_MAX_MB` | Tamaño máximo de un archivo de entrada, en MB (mínimo 1). | `25` |
@@ -54,7 +55,7 @@ exista (por ejemplo un error de tipeo) hace que el servidor no arranque y expliq
 
 ## Cómo arrancarlo
 
-Desde `mcp/`, después de `uv sync`. Los argumentos `--transporte`, `--host` y `--puerto` pisan a
+Desde `mcp/`, después de `uv sync --locked`. Los argumentos `--transporte`, `--host` y `--puerto` pisan a
 las variables de entorno; `--version` muestra la versión.
 
 **stdio** (el cliente lo lanza como proceso hijo, por ejemplo OpenCode en la misma máquina). Es el
@@ -92,6 +93,9 @@ Ejemplo mínimo de configuración de un cliente MCP por stdio (en OpenCode, `ope
 ```
 
 Si hay un error de configuración, el servidor lo explica en stderr y termina con código 2.
+
+Para un servicio persistente, consultá la [guía de despliegue en red local](deploy/README.md):
+instalación con systemd, conexión desde OpenCode, acceso por SSH y rotación del token.
 
 ### Herramientas
 
